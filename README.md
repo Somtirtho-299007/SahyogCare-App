@@ -10,7 +10,7 @@ Rural patients often move through several levels of care, but the referral can b
 
 ![Sketch](./docs/sketch.png)
 
-[View live board (Excalidraw / Miro)](YOUR_BOARD_LINK)
+[View live board (Excalidraw / Miro)](https://excalidraw.com/#json=hpwiVvZLuhoig8uvfFJCG,C-lUW1x55w1Qx-aBEt7pEQ)
 
 ## Documents
 
