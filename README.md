@@ -120,9 +120,8 @@ Interoperable — Designed to work alongside existing healthcare infrastructure 
 
 Clinician-led — The platform supports coordination; diagnosis and treatment remain with healthcare professionals.
 
-## Miro / Excalidraw System Sketch
-* **Public Miro / Excalidraw Link:**  
-   **`[https://excalidraw.com/#json=IXamMBdMKFuXGCEl3aLXY,tXbT3hgYnHJsy77vzKIoTQ]`**  
+* **Public Excalidraw Board Link:**  
+  👉 [**Click here to open the SahyogCare Excalidraw Board**](https://excalidraw.com/#json=IXamMBdMKFuXGCEl3aLXY,tXbT3hgYnHJsy77vzKIoTQ)  
 
 ## *Technology Stack*
  **Mobile App:-
