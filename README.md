@@ -120,8 +120,7 @@ Interoperable — Designed to work alongside existing healthcare infrastructure 
 
 Clinician-led — The platform supports coordination; diagnosis and treatment remain with healthcare professionals.
 
-* **Public Excalidraw Board Link:**  
- https://excalidraw.com/#json=IXamMBdMKFuXGCEl3aLXY,tXbT3hgYnHJsy77vzKIoTQ
+**[View Public Excalidraw Board](https://excalidraw.com/#json=IXamMBdMKFuXGCEl3aLXY,tXbT3hgYnHJsy77vzKIoTQ)**
 
 ## *Technology Stack*
  **Mobile App:-
