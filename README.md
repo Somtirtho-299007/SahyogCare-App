@@ -64,92 +64,112 @@ Diagnostics / Treatment
 Follow-up
    ↓
 Case Closed
+```
 
+---
 
-##Targeted Audience 
+## Targeted Audience
 
-Patients — Primary beneficiaries who need visibility into their referral, care and follow-up.
-ASHA / ANM — Grassroots first point of contact who registers patients, records basic information and facilitates referrals.
-Doctors / Hospitals — Receiving end that accepts referrals and continues patient care.
+### Patients
 
-##Key Features
+Primary beneficiaries who need visibility into their referral, care and follow-up.
 
-1.Patient mobile account with referral-status visibility
+### ASHA / ANM
 
-2.Patient registration and basic assessment
+Grassroots first point of contact who registers patients, records basic information and facilitates referrals.
 
-3.ASHA/ANM-assisted referral creation
+### Doctors / Hospitals
 
-4.Closed-loop referral tracking
+Receiving end that accepts referrals and continues patient care.
 
-5.Hospital/referral acceptance status
+---
 
-6.Doctor and care-status updates
+## Key Features
 
-7.Diagnostic and treatment status
-8.Follow-up dates and reminders
+1. Patient mobile account with referral-status visibility
+2. Patient registration and basic assessment
+3. ASHA/ANM-assisted referral creation
+4. Closed-loop referral tracking
+5. Hospital/referral acceptance status
+6. Doctor and care-status updates
+7. Diagnostic and treatment status
+8. Follow-up dates and reminders
+9. Overdue referral/follow-up alerts
+10. Offline-first data entry and synchronisation
+11. Multilingual interface
+12. Role-based access and secure patient data
 
-9.Overdue referral/follow-up alerts
+---
 
-10.Offline-first data entry and synchronisation
+## Patient Transparency
 
-11.Multilingual interface
+The patient can track the status of their healthcare journey:
 
-12.Role-based access and secure patient data
+```text
+Referral Created        ✓
+Referral Accepted       ✓
+Patient Arrived         ✓
+Doctor Consultation     ✓
+Diagnostic / Treatment  ⏳
+Follow-up               ○
+```
 
-## *Patient Transparency*
+> **The patient should know where their referral stands and what happens next.**
 
-Referral Created       ✓
-Referral Accepted      ✓
-Patient Arrived        ✓
-Doctor Consultation    ✓
-Diagnostic / Treatment ⏳
-Follow-up              ○
+---
 
-The patient should know where their referral stands and what happens next.
+## Product Approach
 
-## *Product Approach*
+### Patient-first
 
-Patient-first — The patient remains the primary beneficiary.
+The patient remains the primary beneficiary.
 
-Closed-loop — A referral is tracked from creation through care and follow-up.
+### Closed-loop
 
-Offline-first — Core grassroots workflows should continue during network interruptions.
+A referral is tracked from creation through care and follow-up.
 
-Interoperable — Designed to work alongside existing healthcare infrastructure rather than replace it.
+### Offline-first
 
-Clinician-led — The platform supports coordination; diagnosis and treatment remain with healthcare professionals.
+Core grassroots workflows should continue during network interruptions.
+
+### Interoperable
+
+Designed to work alongside existing healthcare infrastructure rather than replace it.
+
+### Clinician-led
+
+The platform supports coordination; diagnosis and treatment remain with healthcare professionals.
+
+---
+
+## Public Excalidraw Board
 
 **[View Public Excalidraw Board](https://excalidraw.com/#json=IXamMBdMKFuXGCEl3aLXY,tXbT3hgYnHJsy77vzKIoTQ)**
 
-## *Technology Stack*
- **Mobile App:-
-React Native + Expo
-Language:-
-TypeScript
-Backend:-
-Python + FastAPI
-Database:-
-PostgreSQL
-Offline Storage:-
-SQLite
-Authentication:-
-JWT
-Notifications:-
-Firebase Cloud Messaging
-Cache / Jobs:-
-Redis
-AI Services:-
-Python
-API:-
-REST
-Deployment:-
-Hosting Platform 
-Version Control:-
-Git + GitHub**
+---
 
-## *System Flow*
+## Technology Stack
 
+| Component | Technology |
+|---|---|
+| Mobile App | React Native + Expo |
+| Language | TypeScript |
+| Backend | Python + FastAPI |
+| Database | PostgreSQL |
+| Offline Storage | SQLite |
+| Authentication | JWT |
+| Notifications | Firebase Cloud Messaging |
+| Cache / Jobs | Redis |
+| AI Services | Python |
+| API | REST |
+| Deployment | Hosting Platform |
+| Version Control | Git + GitHub |
+
+---
+
+## System Flow
+
+```text
 Patient Mobile App
         ↕
 SahyogCare Backend
@@ -159,21 +179,34 @@ ASHA / ANM App
 Referral System
         ↕
 Doctor / Hospital
-
+```
 
 Patient-facing status remains connected to the referral lifecycle:
+
+```text
 Created → Accepted → Arrived → Consulted → Care → Follow-up → Closed
+```
 
-## *AI*
+---
+
+## AI
+
 AI is an optional supporting layer, not the decision-maker.
-Potential uses:
-Structured case summarisation
-Administrative prioritisation of pending referrals
-AI will not diagnose patients, prescribe medicines or replace doctors.
 
-## *Existing Healthcare* Ecosystem
-SahyogCare is intended to complement existing systems such as ABDM and eSanjeevani, where appropriate integrations and APIs are available.
+### Potential Uses
 
+- Structured case summarisation
+- Administrative prioritisation of pending referrals
+
+AI will **not** diagnose patients, prescribe medicines or replace doctors.
+
+---
+
+## Existing Healthcare Ecosystem
+
+SahyogCare is intended to complement existing systems such as **ABDM** and **eSanjeevani**, where appropriate integrations and APIs are available.
+
+```text
 Existing Healthcare Systems
           ↓
       SahyogCare
@@ -181,12 +214,15 @@ Existing Healthcare Systems
 Patient Referral Transparency
           ↓
 Care → Follow-up → Closure
+```
 
-## *MVP*
-MVP
+---
 
-The MVP focuses on one complete journey:
+## MVP
 
+The MVP focuses on one complete patient journey:
+
+```text
 Patient Registration
         ↓
 Basic Assessment
@@ -202,10 +238,17 @@ Follow-up
 Patient Sees Status
         ↓
 Case Closed
+```
 
-## *Contributors*
-Contributors
- 1.Somtirtho Banerjee
- 2.Arghanil Mukherjee
+---
 
-Team: Stack Overflow
+## Contributors
+
+### Team: Stack Overflow
+
+1. **Somtirtho Banerjee**
+2. **Arghanil Mukherjee**
+
+**Roles:** Shared product design, development and documentation.
+
+---
