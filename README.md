@@ -120,6 +120,10 @@ Interoperable — Designed to work alongside existing healthcare infrastructure 
 
 Clinician-led — The platform supports coordination; diagnosis and treatment remain with healthcare professionals.
 
+## Miro / Excalidraw System Sketch
+* **Public Miro / Excalidraw Link:**  
+   **`[https://excalidraw.com/#json=IXamMBdMKFuXGCEl3aLXY,tXbT3hgYnHJsy77vzKIoTQ]`**  
+
 ## *Technology Stack*
  **Mobile App:-
 React Native + Expo
@@ -165,7 +169,6 @@ Created → Accepted → Arrived → Consulted → Care → Follow-up → Closed
 ## *AI*
 AI is an optional supporting layer, not the decision-maker.
 Potential uses:
-Voice-to-text for ASHA/ANM notes
 Structured case summarisation
 Administrative prioritisation of pending referrals
 AI will not diagnose patients, prescribe medicines or replace doctors.
