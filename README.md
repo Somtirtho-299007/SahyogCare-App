@@ -121,7 +121,7 @@ Interoperable — Designed to work alongside existing healthcare infrastructure 
 Clinician-led — The platform supports coordination; diagnosis and treatment remain with healthcare professionals.
 
 * **Public Excalidraw Board Link:**  
- <a href="https://excalidraw.com/#json=IXamMBdMKFuXGCEl3aLXY,tXbT3hgYnHJsy77vzKIoTQ" target="_blank">👉 Click here to open the SahyogCare Excalidraw Board</a> 
+ https://excalidraw.com/#json=IXamMBdMKFuXGCEl3aLXY,tXbT3hgYnHJsy77vzKIoTQ
 
 ## *Technology Stack*
  **Mobile App:-
