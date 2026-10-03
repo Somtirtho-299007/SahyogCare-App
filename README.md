@@ -11,7 +11,7 @@
 
 | Desktop | Mobile |
 |---|---|
-| ![SahyogCare Patient Dashboard](./screenshots/patient-desktop.png) | ![SahyogCare Patient Dashboard Mobile](./screenshots/patient-mobile.jpeg) |
+| ![SahyogCare Patient Dashboard](./screenshots/desktop-patient.png) | ![SahyogCare Patient Dashboard Mobile](./screenshots/mobile-medical-team.jpeg) |
 
 ### More Screens
 
@@ -19,13 +19,13 @@
 
 | Desktop | Mobile |
 |---|---|
-| ![SahyogCare Login Desktop](./screenshots/login-desktop.png) | ![SahyogCare Login Mobile](./screenshots/login-mobile.jpeg) |
+| ![SahyogCare Login Desktop](./screenshots/desktop-login.png) | ![SahyogCare Login Mobile](./screenshots/mobile-login.jpeg) |
 
 #### ASHA / ANM Workflow
 
 | Desktop | Mobile |
 |---|---|
-| ![SahyogCare ASHA Desktop](./screenshots/asha-desktop.png) | ![SahyogCare ASHA Mobile](./screenshots/asha-mobile.jpeg) |
+| ![SahyogCare ASHA Desktop](./screenshots/desktop-asha-language-sidebar.png) | ![SahyogCare ASHA Mobile](./screenshots/mobile-asha.jpeg) |
 
 ---
 
