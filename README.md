@@ -9,10 +9,8 @@
 
 ## Preview
 
-### Patient Dashboard
-
 | Desktop | Mobile |
-| :--- | :--- |
+|---|---|
 | ![SahyogCare Patient Dashboard](./screenshots/patient-desktop.png) | ![SahyogCare Patient Dashboard Mobile](./screenshots/patient-mobile.jpeg) |
 
 ### More Screens
@@ -20,13 +18,13 @@
 #### Login / Entry
 
 | Desktop | Mobile |
-| :--- | :--- |
+|---|---|
 | ![SahyogCare Login Desktop](./screenshots/login-desktop.png) | ![SahyogCare Login Mobile](./screenshots/login-mobile.jpeg) |
 
 #### ASHA / ANM Workflow
 
 | Desktop | Mobile |
-| :--- | :--- |
+|---|---|
 | ![SahyogCare ASHA Desktop](./screenshots/asha-desktop.png) | ![SahyogCare ASHA Mobile](./screenshots/asha-mobile.jpeg) |
 
 ---
@@ -39,7 +37,7 @@ It provides role-based interfaces for patients and ASHA/ANM workers to support p
 
 The prototype addresses a specific gap identified during the Ronin phase: a referral should not become the end of a patient's visible journey. Instead, SahyogCare is designed around the question:
 
-> **"What happened to the patient after the referral?"**
+**"What happened to the patient after the referral?"**
 
 The current frontend prototype demonstrates how a patient case can move through different stages of the healthcare journey while keeping important information visible to the relevant users.
 
@@ -97,13 +95,13 @@ The backend, authentication, persistent database storage, real cross-device refe
 ## Tech Stack
 
 | Technology | Purpose |
-| :--- | :--- |
-| **React** | Component-based frontend application |
-| **JavaScript** | Application logic and interactions |
-| **HTML** | Application structure |
-| **CSS** | Responsive layouts and visual styling |
-| **Vite** | Frontend development and build tooling |
-| **Render** | Live deployment |
+|---|---|
+| React | Component-based frontend application |
+| JavaScript | Application logic and interactions |
+| HTML | Application structure |
+| CSS | Responsive layouts and visual styling |
+| Vite | Frontend development and build tooling |
+| Render | Live deployment |
 
 ---
 
@@ -169,7 +167,7 @@ Working on the project also helped me understand how frontend state and user int
 
 The design decision I am most proud of is the referral journey representation because it keeps the product focused on the original problem identified during Ronin:
 
-> **Making the patient's journey visible beyond the initial referral.**
+**making the patient's journey visible beyond the initial referral.**
 
 ---
 
@@ -179,15 +177,15 @@ The design decision I am most proud of is the referral journey representation be
 
 The next milestone builds on the Kenshi frontend prototype by introducing the backend capabilities defined during Ronin:
 
-- Authentication and role-based access
-- PostgreSQL persistence
-- Real referral state transitions
-- Facility and diagnostic availability data
-- Audit events
-- Offline synchronization
-- Authorised referral visibility between facilities
-- Recorded referral outcomes and follow-up events
-- Backend APIs connecting the patient and healthcare-worker workflows
+* Authentication and role-based access
+* PostgreSQL persistence
+* Real referral state transitions
+* Facility and diagnostic availability data
+* Audit events
+* Offline synchronization
+* Authorised referral visibility between facilities
+* Recorded referral outcomes and follow-up events
+* Backend APIs connecting the patient and healthcare-worker workflows
 
 The goal is to move from a frontend prototype to a functioning multi-user coordination system.
 
@@ -203,11 +201,15 @@ The final objective is not simply to deploy the interface, but to validate wheth
 
 SahyogCare is being developed as part of the Journey to Mastery progression:
 
-- **Level 1 — Ronin:** Problem discovery, product planning, architecture, requirements, and roadmap.
-- **Level 2 — Kenshi:** Responsive frontend implementation and validation of the core user journey.
-- **Level 3 — Samurai:** Full-stack implementation with authentication, persistence, APIs, and synchronization.
-- **Level 4 — Shogun:** Controlled pilot, measurement, security, accessibility, and production-oriented refinement.
+* **Level 1 — Ronin:** Problem discovery, product planning, architecture, requirements, and roadmap.
+* **Level 2 — Kenshi:** Responsive frontend implementation and validation of the core user journey.
+* **Level 3 — Samurai:** Full-stack implementation with authentication, persistence, APIs, and synchronization.
+* **Level 4 — Shogun:** Controlled pilot, measurement, security, accessibility, and production-oriented refinement.
 
 ---
 
 *Submitted to Journey to Mastery — Level 2: Kenshi*
+
+---
+
+*Journey to Mastery · Level 2: Kenshi*
