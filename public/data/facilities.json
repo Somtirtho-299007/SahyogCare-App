@@ -1,0 +1,56 @@
+[
+  {
+    "id": "f1",
+    "name": "Kalyani District Hospital",
+    "type": "District Hospital",
+    "distance": "6.2 km",
+    "eta": "18 min",
+    "beds": 14,
+    "specialties": [
+      "General Medicine",
+      "Emergency",
+      "Diagnostics"
+    ],
+    "open": true
+  },
+  {
+    "id": "f2",
+    "name": "Ranaghat Community Health Centre",
+    "type": "CHC",
+    "distance": "9.8 km",
+    "eta": "26 min",
+    "beds": 8,
+    "specialties": [
+      "General Medicine",
+      "Maternity"
+    ],
+    "open": true
+  },
+  {
+    "id": "f3",
+    "name": "Nadia Sub-Divisional Hospital",
+    "type": "Sub-Divisional Hospital",
+    "distance": "14.4 km",
+    "eta": "35 min",
+    "beds": 22,
+    "specialties": [
+      "General Medicine",
+      "Paediatrics",
+      "Diagnostics"
+    ],
+    "open": true
+  },
+  {
+    "id": "f4",
+    "name": "Haringhata Primary Health Centre",
+    "type": "PHC",
+    "distance": "4.1 km",
+    "eta": "12 min",
+    "beds": 3,
+    "specialties": [
+      "General Medicine",
+      "Maternity"
+    ],
+    "open": true
+  }
+]
