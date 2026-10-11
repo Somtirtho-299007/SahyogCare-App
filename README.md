@@ -110,7 +110,7 @@ The backend, authentication, persistent database storage, real cross-device refe
 ### 1. Clone the repository
 
 ```bash
-git clone [https://github.com/Somtirtho-299007/SahyogCare-App.git](https://github.com/Somtirtho-299007/SahyogCare-App.git)
+git clone https://github.com/Somtirtho-299007/SahyogCare-App.git
 ```
 
 ### 2. Move into the project directory
