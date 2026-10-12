@@ -1,0 +1,48 @@
+# Render Blueprint for the SahyogCare backend + PostgreSQL.
+# Render dashboard → New → Blueprint → pick this repo → Apply.
+
+databases:
+  - name: sahyogcare-db
+    plan: free
+    region: singapore
+    databaseName: sahyogcare
+    user: sahyogcare
+
+services:
+  - type: web
+    name: sahyogcare-api
+    runtime: python
+    plan: free
+    region: singapore
+    rootDir: backend
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    startCommand: python -m app.seed && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/v1/health
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      - key: SAHYOG_ENVIRONMENT
+        value: production
+      - key: SAHYOG_SECRET_KEY
+        generateValue: true
+      - key: SAHYOG_DATABASE_URL
+        fromDatabase:
+          name: sahyogcare-db
+          property: connectionString
+      - key: SAHYOG_CORS_ORIGINS
+        value: https://sahyogcare-app.onrender.com,http://localhost:5173
+      # Until email is set up, login codes appear in the Render "Logs" tab.
+      - key: SAHYOG_LOG_LOGIN_CODES
+        value: "true"
+      # Optional: fill these in the dashboard to send real emails (Gmail App Password).
+      - key: SAHYOG_SMTP_HOST
+        sync: false
+      - key: SAHYOG_SMTP_PORT
+        value: "587"
+      - key: SAHYOG_SMTP_USER
+        sync: false
+      - key: SAHYOG_SMTP_PASSWORD
+        sync: false
+      - key: SAHYOG_SMTP_FROM
+        sync: false
