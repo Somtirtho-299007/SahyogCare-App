@@ -10,12 +10,21 @@
 - Mutating offline-capable requests accept `Idempotency-Key`.
 - Application roles are exactly: `WORKER`, `FACILITY_STAFF`, `DOCTOR`, `COORDINATOR`.
 - `Authorised` means the API also checks the user's facility scope and resource access, not only the role.
+- Patients have no account; they use the public lookup below.
+- The workflow and business rules behind these endpoints are in `WORKFLOW.md`.
+
+## Health
+
+| Method | Route | Role | Purpose |
+|---|---|---|---|
+| GET | `/health` | Public | Service and database check |
 
 ## Auth
 
 | Method | Route | Role | Purpose |
 |---|---|---|---|
-| POST | `/auth/login` | Public | Authenticate |
+| POST | `/auth/otp/request` | Public | Send a one-time code to a pre-registered email |
+| POST | `/auth/otp/verify` | Public | Exchange email + code for access and refresh tokens |
 | POST | `/auth/refresh` | Authenticated | Refresh access token |
 | GET | `/me` | Authenticated | Current user and role |
 
@@ -69,7 +78,20 @@ Availability responses must include `updated_at`.
 | POST | `/referrals/{referral_id}/arrival` | FACILITY_STAFF | Record patient arrival |
 | POST | `/referrals/{referral_id}/consultation` | DOCTOR | Record consultation |
 | POST | `/referrals/{referral_id}/outcome` | DOCTOR | Record clinical outcome |
-| POST | `/referrals/{referral_id}/close` | DOCTOR / FACILITY_STAFF / COORDINATOR | Close completed case |
+| POST | `/referrals/{referral_id}/close` | WORKER / DOCTOR / FACILITY_STAFF / COORDINATOR | Close completed case |
+| GET | `/referrals/{referral_id}/pass` | WORKER | Signed QR referral pass |
+| POST | `/referral-passes/verify` | FACILITY_STAFF | Scan a pass; records arrival (offline scans sync with their scan time) |
+| GET | `/referral-rejection-reasons` | Authenticated | Fixed list of rejection reasons |
+
+`POST /referrals/{id}/reject` takes `{"reason": "SERVICE_UNAVAILABLE", "note": "..."}`. Reasons `SERVICE_UNAVAILABLE` and `NO_DOCTOR_AVAILABLE` mark the requested service unavailable at that facility.
+
+## Public patient lookup
+
+| Method | Route | Role | Purpose |
+|---|---|---|---|
+| POST | `/public/referral-status` | Public, rate-limited | `{"code": "SC-7K3M9Q", "phone_last4": "4821"}` → status timeline, facility name, checklist |
+
+Never returns vitals, symptoms or other patients' data. Both values must match.
 
 ### Create referral
 
@@ -134,6 +156,14 @@ Example batch:
 | GET | `/dashboard/worker` | WORKER | Assigned workload |
 | GET | `/dashboard/facility` | FACILITY_STAFF / DOCTOR | Facility referral queue |
 | GET | `/dashboard/coordinator` | COORDINATOR | Aggregate district metrics |
+| GET | `/me/activity-summary?month=2026-10` | WORKER | Referrals made, completed, follow-ups done |
+
+## Notifications
+
+| Method | Route | Role | Purpose |
+|---|---|---|---|
+| GET | `/notifications` | Authenticated | Own alerts (status changes, watchdog alerts) |
+| POST | `/notifications/{id}/read` | Authenticated | Mark as read |
 
 ## Standard Error Shape
 
