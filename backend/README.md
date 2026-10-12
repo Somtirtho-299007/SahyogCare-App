@@ -6,7 +6,7 @@ The plan behind this code is in [`../docs/WORKFLOW.md`](../docs/WORKFLOW.md); en
 
 ## Status
 
-The backend is complete. The frontend (`../src`) is not connected to it yet and still uses browser storage.
+The backend is complete and the frontend (`../src`) uses it. To run both together, see the main [README](../README.md#run-locally).
 
 **Watchdog, follow-ups and dashboards:**
 - Watchdog runs every 5 minutes: alerts the ASHA when a referral is not accepted or the patient has not arrived in time, alerts the coordinator at twice the limit, and marks follow-ups overdue (`POST /watchdog/run` runs it now)

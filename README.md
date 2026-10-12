@@ -88,7 +88,7 @@ During frontend development, the interface was also refined with:
 - Mobile-focused layout adjustments
 - Clearer role-based workflows
 
-The backend, authentication, persistent database storage, real cross-device referral synchronization, offline write synchronization, and live healthcare data remain future milestones.
+The Samurai milestone adds the backend (`backend/`): email OTP login with roles, PostgreSQL persistence, the referral state machine with an event history, signed QR referral passes, a watchdog for referrals that go silent, follow-ups, dashboards and offline sync. The frontend now uses this backend instead of browser storage. Live healthcare data and government-system integrations remain future milestones.
 
 ---
 
@@ -107,37 +107,47 @@ The backend, authentication, persistent database storage, real cross-device refe
 
 ## Run Locally
 
+The app has two parts: the **frontend** (this folder, React + Vite) and the **backend** (`backend/`, FastAPI). Run both, each in its own terminal.
+
 ### 1. Clone the repository
 
 ```bash
 git clone https://github.com/Somtirtho-299007/SahyogCare-App.git
-```
-
-### 2. Move into the project directory
-
-```bash
 cd SahyogCare-App
 ```
 
-### 3. Install dependencies
+### 2. Start the backend (terminal 1)
+
+Needs Python 3.11 or newer. On Windows use `python -m pip`, not plain `pip`.
+
+```bash
+cd backend
+python -m pip install -r requirements-dev.txt
+python -m app.seed
+python -m uvicorn app.main:app --reload
+```
+
+The API runs on `http://127.0.0.1:8000` (interactive docs at `/docs`). See [`backend/README.md`](./backend/README.md).
+
+### 3. Start the frontend (terminal 2)
 
 ```bash
 npm install
-```
-
-### 4. Start the development server
-
-```bash
 npm run dev
 ```
 
-Vite will display the local development URL in the terminal. It is typically:
+Open the URL Vite prints (usually `http://localhost:5173`). Requests to `/api` are forwarded to the backend automatically.
 
-```text
-http://localhost:5173
-```
+### 4. Log in with the demo accounts
 
-Open the displayed URL in your browser to run SahyogCare locally.
+| Role | Email | Can do |
+|---|---|---|
+| ASHA / ANM | `asha@sahyogcare.test` | Register patients, create referrals, see alerts |
+| Medical Team (staff) | `staff@sahyogcare.test` | Accept / reject, record arrival, scan referral passes |
+| Medical Team (doctor) | `doctor@sahyogcare.test` | Record consultation and outcome |
+| Patient | no login | Check status with referral code + last 4 phone digits |
+
+In development the 6-digit login code is shown on screen. The demo facility for staff and doctor is Kalyani District Hospital.
 
 ---
 
