@@ -25,7 +25,7 @@ from app.schemas import (
     WardIn,
     WardOut,
 )
-from app.security import current_user, require_roles
+from app.security import current_user, current_user_any, require_roles
 from app.timeutil import as_utc, utcnow
 from app.workflow import commit
 
@@ -70,7 +70,8 @@ def search_facilities(
     q: str | None = Query(None, max_length=80, description="Matches name, type or service"),
     service: str | None = Query(None, max_length=80, description="Only facilities listing this service"),
     district: str | None = Query(None, max_length=80),
-    _: User = Depends(current_user),
+    # Hospital names are not private; people waiting for approval need them to pick their hospital.
+    _: User = Depends(current_user_any),
     db: Session = Depends(get_db),
 ) -> list[FacilityOut]:
     stmt = select(Facility).options(selectinload(Facility.services)).order_by(Facility.name)

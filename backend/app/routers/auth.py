@@ -1,6 +1,11 @@
-"""Login with a one-time code sent by email. See docs/WORKFLOW.md, "Login"."""
+"""Login with a one-time code sent by email. See docs/WORKFLOW.md, "Login".
 
-from fastapi import APIRouter, Depends
+Anyone with a real email can get a code. A first login creates the account,
+which waits for the coordinator's approval of the role the person asks for
+(see app/routers/access.py). Switched-off accounts get no code.
+"""
+
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
@@ -9,11 +14,12 @@ from app.db import get_db
 from app.emailer import send_login_code
 from app.errors import ApiError
 from app.models import AuditLog, OtpCode, User
-from app.rules import OTP_MAX_ATTEMPTS, OTP_RESEND_AFTER, OTP_VALID_FOR
+from app.ratelimit import RateLimiter
+from app.rules import OTP_MAX_ATTEMPTS, OTP_REQUESTS_PER_MINUTE, OTP_RESEND_AFTER, OTP_VALID_FOR, Role
 from app.schemas import OtpRequestIn, OtpRequestOut, OtpVerifyIn, RefreshIn, TokensOut, UserOut
 from app.security import (
     access_token_for,
-    current_user,
+    current_user_any,
     hash_otp,
     load_active_user,
     new_otp,
@@ -25,7 +31,9 @@ from app.timeutil import as_utc, utcnow
 
 router = APIRouter(tags=["auth"])
 
-GENERIC_SENT = "If this email is registered, a login code has been sent."
+GENERIC_SENT = "A login code has been sent to this email."
+# Stops one machine from making the server send emails to thousands of addresses.
+code_limiter = RateLimiter(OTP_REQUESTS_PER_MINUTE)
 
 
 def _normalise(email: str) -> str:
@@ -51,11 +59,12 @@ def _tokens(user: User) -> TokensOut:
 
 
 @router.post("/auth/otp/request", response_model=OtpRequestOut, status_code=202)
-def request_code(body: OtpRequestIn, db: Session = Depends(get_db)) -> OtpRequestOut:
+def request_code(body: OtpRequestIn, request: Request, db: Session = Depends(get_db)) -> OtpRequestOut:
+    code_limiter.check(request.client.host if request.client else "unknown")
     email = _normalise(body.email)
-    user = db.scalar(select(User).where(User.email == email, User.is_active.is_(True)))
-    if user is None:
-        # Same answer as for a registered email, so the API never reveals who has an account.
+    user = db.scalar(select(User).where(User.email == email))
+    if user is not None and not user.is_active:
+        # Switched off by the coordinator: same answer, but no code.
         return OtpRequestOut(message=GENERIC_SENT)
 
     now = utcnow()
@@ -105,7 +114,15 @@ def verify_code(body: OtpVerifyIn, db: Session = Depends(get_db)) -> TokensOut:
 
     otp.used_at = utcnow()
     user = db.scalar(select(User).where(User.email == email))
-    if user is None or not user.is_active:
+    if user is None:
+        # First login: the email is proven, so the account exists from now on. It waits
+        # for approval (or is an approved ASHA straight away when auto-approval is on).
+        user = User(email=email, name=email.split("@")[0], role=Role.WORKER,
+                    district=settings.coordinator_district, approved=settings.auto_approve_asha)
+        db.add(user)
+        db.flush()
+        db.add(AuditLog(actor_id=user.id, action="SIGNED_UP", target_type="user", target_id=user.id))
+    elif not user.is_active:
         db.commit()
         raise ApiError(401, "AUTH_REQUIRED", "This account is not active.")
     db.add(AuditLog(actor_id=user.id, action="LOGIN", target_type="user", target_id=user.id))
@@ -120,5 +137,5 @@ def refresh(body: RefreshIn, db: Session = Depends(get_db)) -> TokensOut:
 
 
 @router.get("/me", response_model=UserOut)
-def me(user: User = Depends(current_user)) -> UserOut:
+def me(user: User = Depends(current_user_any)) -> UserOut:
     return UserOut.model_validate(user)
