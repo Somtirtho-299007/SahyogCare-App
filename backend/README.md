@@ -6,16 +6,40 @@ The plan behind this code is in [`../docs/WORKFLOW.md`](../docs/WORKFLOW.md); en
 
 ## Status
 
-**Step 2 of 6 (login and roles) is done:**
+The backend is complete. The frontend (`../src`) is not connected to it yet and still uses browser storage.
+
+**Watchdog, follow-ups and dashboards:**
+- Watchdog runs every 5 minutes: alerts the ASHA when a referral is not accepted or the patient has not arrived in time, alerts the coordinator at twice the limit, and marks follow-ups overdue (`POST /watchdog/run` runs it now)
+- Follow-ups: `/follow-ups` list, `complete` (closes the referral, late visits count), `miss`; coordinator `POST /referrals/{id}/escalate`
+- `GET /dashboard/summary`: the same counts for every role from one definition of "open"; coordinators also see which facilities are slow to accept or reject most
+- `GET /me/activity-summary?month=YYYY-MM`: the ASHA's monthly record of work
+
+**Offline sync:**
+- `POST /sync/batch`: upload actions queued while offline; each runs through the normal rules, retries never duplicate, conflicts come back as `SYNC_CONFLICT`
+- `GET /sync/changes?since=`: what changed since the last sync
+
+64 automated tests, run on both SQLite and PostgreSQL.
+
+**Core workflow:**
+- Patients (`/patients`) with consent check and duplicate warning; encounters with vitals checks, medicines and a triage hint
+- Referrals: create (with `Idempotency-Key`), queue (most urgent first), detail with full history
+- Status changes: `accept`, `reject` (fixed reasons), `arrival`, `consultation`, `outcome`, `close` — only the right role, only in the right order
+- Every change is recorded as an event and the ASHA gets a notification (`/notifications`)
+- Learning from rejections: "service unavailable" or "no doctor" marks that service unavailable, and search ranks that facility last; accepting marks it available
+- Signed QR referral pass (`/referrals/{id}/pass`) and scanning at the desk (`/referral-passes/verify`), including offline scans synced later
+- Public patient lookup with code + last 4 phone digits, rate-limited (`/public/referral-status`)
+- Everyone only sees their own records: ASHA her referrals, facility staff their facility, coordinator their district
+
+**Login and roles:**
 - Login with a one-time code sent by email: `POST /api/v1/auth/otp/request`, `POST /api/v1/auth/otp/verify`
 - Codes are hashed, expire after 5 minutes, lock after 5 wrong tries, and can be re-sent after 60 seconds
 - Unknown emails get the same answer as registered ones, so the API never reveals who has an account
 - Access token (15 minutes) and refresh token (7 days): `POST /api/v1/auth/refresh`; current user: `GET /api/v1/me`
 - Role checks (`require_roles(...)`) ready for step 3; facility search now needs login
 - Opening `http://127.0.0.1:8000/` goes straight to `/docs`
-- 32 automated tests
 
-**Step 1 (foundation):**
+
+**Foundation:**
 - All database tables (`app/models.py`)
 - All business rules in one file (`app/rules.py`): referral state machine, who may move a referral, vital-sign ranges, watchdog timings, rejection reasons, referral codes
 - Standard error shape for every error
@@ -55,6 +79,19 @@ The test accounts are `asha@`, `staff@`, `doctor@` and `coordinator@sahyogcare.t
 3. Copy `access_token` from the response, click **Authorize** (top right), paste it, and click **Authorize**.
 4. Now protected endpoints such as `GET /api/v1/facilities` and `GET /api/v1/me` work. The token lasts 15 minutes.
 
+## Try the whole journey from /docs
+
+Log in as each role in turn (see above) and use **Authorize** with that role's token:
+
+1. **ASHA** (`asha@`): `POST /patients` → `POST /patients/{id}/encounters` → `GET /facilities` (copy a facility `id`) → `POST /referrals`. Note the referral `id` and `code`.
+2. **Staff** (`staff@`, Kalyani District Hospital): `GET /referrals?open=true` → `POST /referrals/{id}/accept` → `POST /referrals/{id}/arrival`.
+3. **Doctor** (`doctor@`): `POST /referrals/{id}/consultation` → `POST /referrals/{id}/outcome`.
+4. **ASHA** again: `GET /notifications` shows each step; `POST /referrals/{id}/close`.
+5. **No login:** `POST /public/referral-status` with the code and the last 4 digits of the patient's phone.
+6. **Coordinator** (`coordinator@`): `GET /dashboard/summary` shows district totals and which facility is slowest; `POST /watchdog/run` checks for silent referrals.
+
+The test users' facility is Kalyani District Hospital, so refer to it in step 1.
+
 ## Tests
 
 Run the tests:
@@ -76,6 +113,7 @@ Copy `.env.example` to `.env` to change settings. Never commit `.env`.
 | `SAHYOG_ENVIRONMENT` | `development` | `production` refuses to start with the default secret |
 | `SAHYOG_SECRET_KEY` | `dev-only-secret-change-me-before-production` | Signing key for tokens, login codes and referral passes — at least 32 random characters in production |
 | `SAHYOG_SMTP_HOST` etc. | empty | Email server for login codes; empty means codes are printed in the terminal (development only) |
+| `SAHYOG_WATCHDOG_ENABLED` | `true` | Background check for silent referrals and overdue follow-ups every 5 minutes |
 
 ## Deploy on Render
 
@@ -106,6 +144,11 @@ backend/
     seed.py        starting data
     security.py    login codes, tokens, role checks
     emailer.py     sending login codes
+    access.py      who may see which records
+    workflow.py    status changes, events, notifications
+    passes.py      signed QR referral passes
+    ratelimit.py   limit for public lookups
+    watchdog.py    alerts for silent referrals, overdue follow-ups
     routers/       endpoints
   tests/
 ```

@@ -54,7 +54,8 @@ Patient: code + last 4 phone digits → own referral status.
 | `CONSULTED` | `OUTCOME_RECORDED` | DOCTOR |
 | `OUTCOME_RECORDED` | `FOLLOW_UP_DUE` | System |
 | `FOLLOW_UP_DUE` | `CLOSED` | WORKER, DOCTOR, FACILITY_STAFF, COORDINATOR |
-| `FOLLOW_UP_DUE` | `OVERDUE` | System |
+| `FOLLOW_UP_DUE` | `OVERDUE` | System (due date passed), WORKER (visit missed) |
+| `OVERDUE` | `CLOSED` | WORKER, COORDINATOR (a late visit still completes) |
 | `OVERDUE` | `ESCALATED` | COORDINATOR |
 | `ESCALATED` | `CLOSED` | COORDINATOR |
 
@@ -142,10 +143,10 @@ Voice input for symptoms in Bengali; missed-call → SMS status for patients; Co
 
 1. **Foundation** — FastAPI skeleton, tables, rules, seed data, health check. *(done)*
 2. **Login and roles** — OTP, tokens, role checks. *(done; scope checks arrive with each endpoint in step 3)*
-3. **Core workflow** — patients, encounters, referrals, state machine, referral pass, patient lookup.
-4. **Connect the frontend** — split `main.jsx`, replace browser storage with API calls.
-5. **Watchdog, follow-ups, learning from rejections, activity summary, dashboard counts.**
-6. **Full offline sync.**
+3. **Core workflow** — patients, encounters, referrals, state machine, referral pass, patient lookup, notifications. *(done)*
+4. **Watchdog, follow-ups, escalation, activity summary, dashboard counts.** *(done)*
+5. **Offline sync** — batch upload of queued actions and pulling changes. *(done)*
+6. **Connect the frontend** — replace browser storage with API calls. *(not started; the frontend is unchanged)*
 
 ## 9. Placeholder values
 

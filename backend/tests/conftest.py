@@ -7,7 +7,9 @@ import pytest
 # Each test run uses its own throwaway SQLite file, never the developer's database.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 TEST_DB = Path(__file__).resolve().parent / "_test.db"
-os.environ["SAHYOG_DATABASE_URL"] = f"sqlite:///{TEST_DB}"
+# Set SAHYOG_TEST_DATABASE_URL to run the same tests against PostgreSQL.
+os.environ["SAHYOG_WATCHDOG_ENABLED"] = "false"  # tests run the watchdog by hand
+os.environ["SAHYOG_DATABASE_URL"] = os.environ.get("SAHYOG_TEST_DATABASE_URL", f"sqlite:///{TEST_DB}")
 
 from fastapi.testclient import TestClient  # noqa: E402
 
@@ -27,6 +29,9 @@ def db():
 
 @pytest.fixture()
 def client(db):
+    from app.routers.public import lookup_limiter
+
+    lookup_limiter.reset()
     with TestClient(app) as c:
         yield c
 

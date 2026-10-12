@@ -39,10 +39,12 @@ def test_asha_cannot_accept_a_referral():
     assert e.value.code == "FORBIDDEN"
 
 
-def test_only_system_marks_overdue():
+def test_who_marks_overdue():
     with pytest.raises(TransitionError):
         check_transition(Role.COORDINATOR, Status.FOLLOW_UP_DUE, Status.OVERDUE)
-    check_transition(SYSTEM, Status.FOLLOW_UP_DUE, Status.OVERDUE)
+    check_transition(SYSTEM, Status.FOLLOW_UP_DUE, Status.OVERDUE)  # due date passed
+    check_transition(Role.WORKER, Status.FOLLOW_UP_DUE, Status.OVERDUE)  # ASHA reports a missed visit
+    check_transition(Role.WORKER, Status.OVERDUE, Status.CLOSED)  # late visit still completes
 
 
 def test_closed_referrals_cannot_move():
