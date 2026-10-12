@@ -1,2 +1,8 @@
 node_modules/
 dist/
+# Backend
+backend/.venv/
+backend/.env
+backend/*.db
+__pycache__/
+.pytest_cache/
