@@ -1,11 +1,6 @@
-"""Facility search.
+"""Facility search. Any logged-in user may search facilities."""
 
-NOTE: these endpoints are public in step 1 so the frontend can be connected
-early. Step 2 (login and roles) puts them behind authentication, as
-docs/API_SPEC.md requires.
-"""
-
-from datetime import datetime, timezone
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import or_, select
@@ -16,21 +11,16 @@ from app.errors import ApiError
 from app.models import Facility, FacilityService
 from app.rules import AVAILABILITY_STALE_AFTER
 from app.schemas import FacilityOut, ServiceOut
+from app.security import current_user
+from app.timeutil import as_utc, utcnow
 
-router = APIRouter(prefix="/facilities", tags=["facilities"])
-
-
-def _as_utc(dt: datetime | None) -> datetime | None:
-    # SQLite returns naive datetimes; treat stored values as UTC.
-    if dt is None:
-        return None
-    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+router = APIRouter(prefix="/facilities", tags=["facilities"], dependencies=[Depends(current_user)])
 
 
 def _facility_out(f: Facility, now: datetime) -> FacilityOut:
     services = []
     for s in f.services:
-        updated = _as_utc(s.availability_updated_at)
+        updated = as_utc(s.availability_updated_at)
         services.append(
             ServiceOut(
                 service=s.service,
@@ -74,7 +64,7 @@ def search_facilities(
                 Facility.services.any(FacilityService.service.ilike(like)),
             )
         )
-    now = datetime.now(timezone.utc)
+    now = utcnow()
     results = [_facility_out(f, now) for f in db.scalars(stmt).unique()]
     return sorted(results, key=lambda f: _rank(f, service))
 
@@ -84,4 +74,4 @@ def get_facility(facility_id: str, db: Session = Depends(get_db)) -> FacilityOut
     f = db.get(Facility, facility_id, options=[selectinload(Facility.services)])
     if f is None:
         raise ApiError(404, "NOT_FOUND", "Facility not found.")
-    return _facility_out(f, datetime.now(timezone.utc))
+    return _facility_out(f, utcnow())

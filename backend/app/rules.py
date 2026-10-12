@@ -185,3 +185,11 @@ REJECTION_LABELS: dict[RejectionReason, str] = {
 MARKS_SERVICE_UNAVAILABLE = frozenset(
     {RejectionReason.SERVICE_UNAVAILABLE, RejectionReason.NO_DOCTOR_AVAILABLE}
 )
+
+
+# ---------- Login (one-time codes) ----------
+
+OTP_LENGTH = 6
+OTP_VALID_FOR = timedelta(minutes=5)
+OTP_MAX_ATTEMPTS = 5
+OTP_RESEND_AFTER = timedelta(seconds=60)

@@ -25,7 +25,7 @@
 |---|---|---|---|
 | POST | `/auth/otp/request` | Public | Send a one-time code to a pre-registered email |
 | POST | `/auth/otp/verify` | Public | Exchange email + code for access and refresh tokens |
-| POST | `/auth/refresh` | Authenticated | Refresh access token |
+| POST | `/auth/refresh` | Public (needs refresh token in body) | `{"refresh_token": "..."}` → new access and refresh tokens |
 | GET | `/me` | Authenticated | Current user and role |
 
 ## Patients

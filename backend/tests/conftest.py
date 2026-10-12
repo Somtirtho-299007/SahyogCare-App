@@ -31,6 +31,21 @@ def client(db):
         yield c
 
 
+@pytest.fixture()
+def auth(db):
+    """auth("WORKER") -> headers for the seeded test user with that role."""
+    from sqlalchemy import select
+
+    from app.models import User
+    from app.security import access_token_for
+
+    def _headers(role: str) -> dict[str, str]:
+        user = db.scalar(select(User).where(User.role == role))
+        return {"Authorization": f"Bearer {access_token_for(user)}"}
+
+    return _headers
+
+
 def pytest_sessionfinish(session, exitstatus):
     engine.dispose()
     TEST_DB.unlink(missing_ok=True)

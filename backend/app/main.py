@@ -8,13 +8,14 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from app import __version__, models  # noqa: F401  (models must be imported so tables are registered)
 from app.config import settings
 from app.db import Base, engine
 from app.errors import install_error_handlers
-from app.routers import facilities, health
+from app.routers import auth, facilities, health
 
 logging.basicConfig(level=logging.INFO)
 
@@ -39,4 +40,10 @@ install_error_handlers(app)
 
 API = "/api/v1"
 app.include_router(health.router, prefix=API)
+app.include_router(auth.router, prefix=API)
 app.include_router(facilities.router, prefix=API)
+
+
+@app.get("/", include_in_schema=False)
+def root() -> RedirectResponse:
+    return RedirectResponse("/docs")

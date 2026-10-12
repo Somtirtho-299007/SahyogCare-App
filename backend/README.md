@@ -6,19 +6,27 @@ The plan behind this code is in [`../docs/WORKFLOW.md`](../docs/WORKFLOW.md); en
 
 ## Status
 
-**Step 1 of 6 (foundation) is done:**
+**Step 2 of 6 (login and roles) is done:**
+- Login with a one-time code sent by email: `POST /api/v1/auth/otp/request`, `POST /api/v1/auth/otp/verify`
+- Codes are hashed, expire after 5 minutes, lock after 5 wrong tries, and can be re-sent after 60 seconds
+- Unknown emails get the same answer as registered ones, so the API never reveals who has an account
+- Access token (15 minutes) and refresh token (7 days): `POST /api/v1/auth/refresh`; current user: `GET /api/v1/me`
+- Role checks (`require_roles(...)`) ready for step 3; facility search now needs login
+- Opening `http://127.0.0.1:8000/` goes straight to `/docs`
+- 32 automated tests
+
+**Step 1 (foundation):**
 - All database tables (`app/models.py`)
 - All business rules in one file (`app/rules.py`): referral state machine, who may move a referral, vital-sign ranges, watchdog timings, rejection reasons, referral codes
 - Standard error shape for every error
 - Starting data: 4 facilities in Nadia and 4 fake test users (`app/seed.py`)
 - Endpoints: `GET /api/v1/health`, `GET /api/v1/facilities`, `GET /api/v1/facilities/{id}`
-- 15 automated tests
-
-Facility endpoints are public for now; step 2 (login and roles) protects them.
 
 ## Run it on Windows
 
 Needs **Python 3.11 or newer** (`python --version`).
+
+On Windows, always install with `python -m pip install ...` rather than `pip install ...`. If more than one Python is installed, plain `pip` may install into a different Python than the one `python` runs.
 
 Open a terminal in the `backend` folder:
 
@@ -26,9 +34,9 @@ Open a terminal in the `backend` folder:
 cd backend
 python -m venv .venv
 .venv\Scripts\activate
-pip install -r requirements-dev.txt
+python -m pip install -r requirements-dev.txt
 python -m app.seed
-uvicorn app.main:app --reload
+python -m uvicorn app.main:app --reload
 ```
 
 On macOS/Linux, activate with `source .venv/bin/activate` instead.
@@ -36,6 +44,18 @@ On macOS/Linux, activate with `source .venv/bin/activate` instead.
 Then open:
 - http://127.0.0.1:8000/api/v1/health → `{"status": "ok", ...}`
 - http://127.0.0.1:8000/docs → interactive list of every endpoint, where you can try them
+
+## Log in from the /docs page
+
+The test accounts are `asha@`, `staff@`, `doctor@` and `coordinator@sahyogcare.test`.
+
+1. Open `POST /api/v1/auth/otp/request` → **Try it out** → body `{"email": "asha@sahyogcare.test"}` → **Execute**.
+   In development the response contains `dev_code`, and the code is also printed in the server terminal.
+2. Open `POST /api/v1/auth/otp/verify` → body `{"email": "asha@sahyogcare.test", "code": "<the code>"}` → **Execute**.
+3. Copy `access_token` from the response, click **Authorize** (top right), paste it, and click **Authorize**.
+4. Now protected endpoints such as `GET /api/v1/facilities` and `GET /api/v1/me` work. The token lasts 15 minutes.
+
+## Tests
 
 Run the tests:
 
@@ -54,7 +74,8 @@ Copy `.env.example` to `.env` to change settings. Never commit `.env`.
 | `SAHYOG_DATABASE_URL` | `sqlite:///./sahyogcare.db` | Database address |
 | `SAHYOG_CORS_ORIGINS` | `http://localhost:5173,...` | Frontend addresses allowed to call the API |
 | `SAHYOG_ENVIRONMENT` | `development` | `production` refuses to start with the default secret |
-| `SAHYOG_SECRET_KEY` | `dev-only-change-me` | Signing key (tokens, referral passes) — set a long random value in production |
+| `SAHYOG_SECRET_KEY` | `dev-only-secret-change-me-before-production` | Signing key for tokens, login codes and referral passes — at least 32 random characters in production |
+| `SAHYOG_SMTP_HOST` etc. | empty | Email server for login codes; empty means codes are printed in the terminal (development only) |
 
 ## Deploy on Render
 
@@ -62,7 +83,7 @@ Create a **Web Service** from this repo with:
 - Root directory: `backend`
 - Build command: `pip install -r requirements.txt`
 - Start command: `python -m app.seed && uvicorn app.main:app --host 0.0.0.0 --port $PORT`
-- Environment: `SAHYOG_DATABASE_URL` (the Internal Database URL of a Render PostgreSQL database), `SAHYOG_ENVIRONMENT=production`, `SAHYOG_SECRET_KEY`, `SAHYOG_CORS_ORIGINS=https://sahyogcare-app.onrender.com`
+- Environment: `SAHYOG_DATABASE_URL` (the Internal Database URL of a Render PostgreSQL database), `SAHYOG_ENVIRONMENT=production`, `SAHYOG_SECRET_KEY`, `SAHYOG_CORS_ORIGINS=https://sahyogcare-app.onrender.com`, and the `SAHYOG_SMTP_*` settings (production never shows `dev_code`, so login needs real email)
 
 Check Render's current free-tier limits for PostgreSQL before relying on it.
 
@@ -83,6 +104,8 @@ backend/
     errors.py      standard error shape
     schemas.py     response shapes
     seed.py        starting data
+    security.py    login codes, tokens, role checks
+    emailer.py     sending login codes
     routers/       endpoints
   tests/
 ```
