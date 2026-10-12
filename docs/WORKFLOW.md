@@ -146,7 +146,7 @@ Voice input for symptoms in Bengali; missed-call → SMS status for patients; Co
 3. **Core workflow** — patients, encounters, referrals, state machine, referral pass, patient lookup, notifications. *(done)*
 4. **Watchdog, follow-ups, escalation, activity summary, dashboard counts.** *(done)*
 5. **Offline sync** — batch upload of queued actions and pulling changes. *(done)*
-6. **Connect the frontend** — replace browser storage with API calls. *(not started; the frontend is unchanged)*
+6. **Connect the frontend** — every screen now uses the API: OTP login, ASHA referrals with QR pass and alerts, medical queue with role-based actions, reject reasons and pass scanning, patient lookup. *(done; offline queueing in the browser is still to do — the backend side is ready)*
 
 ## 9. Placeholder values
 

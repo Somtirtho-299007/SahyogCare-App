@@ -1,0 +1,507 @@
+import React, { createContext, useContext, useEffect, useState } from "react";
+
+export function readLS(k) {
+  try {
+    return localStorage.getItem(k);
+  } catch {
+    return null;
+  }
+}
+export function writeLS(k, v) {
+  try {
+    localStorage.setItem(k, v);
+  } catch {}
+}
+export function removeLS(k) {
+  try {
+    localStorage.removeItem(k);
+  } catch {}
+}
+
+export const LANGUAGES = [
+  ["en", "English", "English"],
+  ["as", "Assamese", "অসমীয়া"],
+  ["bn", "Bengali", "বাংলা"],
+  ["brx", "Bodo", "बड़ो"],
+  ["doi", "Dogri", "डोगरी"],
+  ["gu", "Gujarati", "ગુજરાતી"],
+  ["hi", "Hindi", "हिन्दी"],
+  ["kn", "Kannada", "ಕನ್ನಡ"],
+  ["ks", "Kashmiri", "कॉशुर"],
+  ["kok", "Konkani", "कोंकणी"],
+  ["mai", "Maithili", "मैथिली"],
+  ["ml", "Malayalam", "മലയാളം"],
+  ["mni", "Manipuri", "মৈতৈলোন্"],
+  ["mr", "Marathi", "मराठी"],
+  ["ne", "Nepali", "नेपाली"],
+  ["or", "Odia", "ଓଡ଼ିଆ"],
+  ["pa", "Punjabi", "ਪੰਜਾਬੀ"],
+  ["sa", "Sanskrit", "संस्कृतम्"],
+  ["sat", "Santali", "ᱥᱟᱱᱛᱟᱲᱤ"],
+  ["sd", "Sindhi", "سنڌي"],
+  ["ta", "Tamil", "தமிழ்"],
+  ["te", "Telugu", "తెలుగు"],
+  ["ur", "Urdu", "اردو"],
+];
+export const EN = {
+  workspace: "SahyogCare workspace",
+  signOut: "Sign out",
+  welcome: "Welcome back",
+  chooseRole: "Choose your care role and verify your email.",
+  email: "Email / Google account",
+  sendCode: "Send verification code",
+  verify: "Verify & open dashboard",
+  changeEmail: "Change email",
+  otpNote: "Demo verification code generated for this test run.",
+  frontendDemo: "Frontend demo authentication only.",
+  patient: "Patient",
+  asha: "ASHA / ANM",
+  medical: "Medical Team",
+  patientDesc: "My referral & care journey",
+  ashaDesc: "Field worker coordination",
+  medicalDesc: "Triage, referrals & outcomes",
+  patientDashboard: "Patient care dashboard",
+  patientSub: "See where your referral is, what happens next, and what to bring.",
+  ashaDashboard: "ASHA field dashboard",
+  ashaSub: "Capture, update and hand over with a visible referral trail.",
+  medicalDashboard: "Medical operations dashboard",
+  medicalSub: "Triage the incoming queue, accept arrivals and close the loop.",
+  casesToday: "Cases today",
+  openReferrals: "Open referrals",
+  mode: "Mode",
+  offline: "Offline",
+  freshLocal: "Fresh local workspace",
+  noHidden: "No hidden records",
+  localDemo: "Local demo data",
+  patientIntake: "Patient intake & triage",
+  step: "Step",
+  patientName: "Patient name",
+  age: "Age",
+  phone: "Phone",
+  triage: "Triage",
+  symptoms: "Reason / symptoms",
+  optional: "Optional",
+  saveCase: "Save case & find facility →",
+  searchFacility: "Search hospital, CHC, PHC or specialty",
+  noFacility: "No receiving facility found",
+  tryAnother: "Try another search term.",
+  createReferral: "Create referral →",
+  referralLive: "Referral is live",
+  shareToken: "Share this token with the patient. The same record is now visible to the medical team.",
+  advanceReferral: "Advance referral status →",
+  myContinuity: "My referral continuity",
+  continuityText: "Alerts and the latest status of every referral you created. Tap one to see its journey.",
+  noReferrals: "No referrals yet",
+  createFirst: "Create the first case on the left.",
+  referralPass: "Referral pass & live journey",
+  find: "Find",
+  noReferral: "No referral found",
+  askToken: "Ask your ASHA worker for the referral token.",
+  checklist: "Patient checklist",
+  beforeTravel: "Before you travel",
+  carryToken: "Carry your referral token",
+  medicines: "Bring current medicines and reports",
+  phoneReach: "Keep a phone number reachable",
+  showJourney: "Show this journey at the receiving desk",
+  incoming: "Incoming",
+  priority: "Priority",
+  emergency: "Emergency",
+  sharedQueue: "Shared referral queue",
+  requiresAttention: "Requires attention",
+  immediateEscalation: "Immediate escalation",
+  operationsQueue: "Referral operations queue",
+  queueEmpty: "Queue is empty",
+  freshWorkspace: "No referrals for your facility yet.",
+  closed: "Closed",
+  advance: "Advance",
+  currentStatus: "Current status",
+  completed: "Completed",
+  nextStep: "Next step",
+  activeJourney: "Active care journey",
+  waitingReferral: "Waiting for a referral",
+  destination: "Destination",
+  updatedShared: "Updated from shared referral",
+  notStarted: "Not started",
+  routine: "Routine",
+  offlineReady: "Offline-ready workflow concept",
+  closedLoop: "Closed-loop referral tracking",
+  oneReferral: "One referral.",
+  oneJourney: "One visible journey.",
+  authDescription: "A role-aware care coordination frontend for field workers, patients and medical teams.",
+  newCase: "New patient case",
+  nameRequired: "Enter the patient name first.",
+  nothingInView: "No referrals in this view.",
+  selectLanguage: "Select language",
+  language: "Language",
+  close: "Close",
+  vitalsTitle: "Patient vitals & medicines",
+  bloodPressure: "Blood pressure",
+  systolic: "Systolic",
+  diastolic: "Diastolic",
+  pulse: "Pulse / heart rate",
+  temperature: "Temperature",
+  spo2: "SpO₂",
+  respiratoryRate: "Respiratory rate",
+  glucose: "Blood glucose",
+  weight: "Weight",
+  updateVitals: "Update patient record",
+  lastUpdated: "Last updated",
+  reference: "Adult reference",
+  bpReference: "Reference: around <120/80 mmHg",
+  bpNote: "Reference values are informational and are not a diagnosis.",
+  withinReference: "Within reference",
+  reviewReading: "Review reading",
+  medicinesTitle: "Ongoing medicines",
+  medicineName: "Medicine name",
+  dose: "Dose",
+  frequency: "Frequency",
+  adherence: "Adherence / notes",
+  addMedicine: "Add medicine",
+  remove: "Remove",
+  noMedicines: "No ongoing medicines added yet.",
+  savedVitals: "Patient record updated.",
+  teleconsultTitle: "Talk to a doctor",
+  teleconsultSub: "eSanjeevani teleconsultation support",
+  teleconsultText:
+    "Use the eSanjeevani route for remote medical consultation. This prototype keeps the connection step frontend-only for now.",
+  startConsult: "Start consultation",
+  teleconsultSoon: "Teleconsultation integration will be connected in the backend phase.",
+  // Connected to the backend
+  consentLabel: "The patient agreed to share these details with the health team",
+  serviceNeeded: "Service needed",
+  phoneRequired: "10-digit mobile",
+  alerts: "Alerts",
+  alertsMeta: "Status changes and reminders",
+  continuePatient: "Continue as patient",
+  patientNoLogin: "Patients do not need to log in. Use your referral code and phone number.",
+  phoneLast4: "Last 4 digits of phone",
+  referralRejected: "The facility could not take this referral. Your ASHA worker will arrange another one.",
+  scanPass: "Scan or paste a referral pass",
+  scanCamera: "Scan with camera",
+  recordArrival: "Record arrival",
+  accept: "Accept",
+  reject: "Reject",
+  rejectReason: "Reason",
+  confirmReject: "Confirm reject",
+  cancel: "Cancel",
+  consulted: "Mark consulted",
+  recordOutcome: "Record outcome",
+  escalate: "Escalate",
+  waitingFor: "Waiting for",
+  withAsha: "With ASHA for follow-up",
+  referralPassQr: "Referral pass",
+  loading: "Loading…",
+  demoAccounts: "Demo accounts: asha@ · staff@ · doctor@sahyogcare.test",
+  unavailable: "unavailable",
+  enterReading: "Enter at least one reading or medicine to update the record.",
+  copyPass: "Copy pass",
+  passCopied: "Referral pass copied. Paste it at the facility desk.",
+  followUpDue: "Follow-up visit due",
+  followUpLate: "overdue",
+  followUpDone: "Follow-up done",
+  visitMissed: "Visit missed",
+  followUpDoneToast: "Follow-up recorded. Referral closed.",
+  followUpMissedToast: "Marked as missed. The coordinator can see it.",
+};
+export const LOCAL = {
+  bn: {
+    language: "ভাষা",
+    selectLanguage: "ভাষা নির্বাচন করুন",
+    patient: "রোগী",
+    asha: "আশা / এএনএম",
+    medical: "মেডিক্যাল টিম",
+    signOut: "সাইন আউট",
+    sendCode: "ভেরিফিকেশন কোড পাঠান",
+    verify: "যাচাই করে ড্যাশবোর্ড খুলুন",
+    changeEmail: "ইমেল পরিবর্তন করুন",
+    patientDashboard: "রোগীর কেয়ার ড্যাশবোর্ড",
+    ashaDashboard: "আশা ফিল্ড ড্যাশবোর্ড",
+    medicalDashboard: "মেডিক্যাল অপারেশনস ড্যাশবোর্ড",
+    patientName: "রোগীর নাম",
+    age: "বয়স",
+    phone: "ফোন",
+    triage: "ট্রায়াজ",
+    symptoms: "কারণ / উপসর্গ",
+    saveCase: "কেস সেভ করুন ও ফ্যাসিলিটি খুঁজুন →",
+    createReferral: "রেফারাল তৈরি করুন →",
+    referralLive: "রেফারাল সক্রিয়",
+    find: "খুঁজুন",
+    checklist: "রোগীর চেকলিস্ট",
+    incoming: "আসন্ন",
+    priority: "অগ্রাধিকার",
+    emergency: "জরুরি",
+    operationsQueue: "রেফারাল অপারেশনস কিউ",
+    queueEmpty: "কিউ খালি",
+    advance: "এগিয়ে নিন",
+    closed: "বন্ধ",
+    vitalsTitle: "রোগীর ভাইটালস ও ওষুধ",
+    bloodPressure: "রক্তচাপ",
+    temperature: "তাপমাত্রা",
+    pulse: "পালস / হার্ট রেট",
+    spo2: "SpO₂",
+    updateVitals: "রোগীর রেকর্ড আপডেট করুন",
+    lastUpdated: "সর্বশেষ আপডেট",
+    reference: "প্রাপ্তবয়স্ক রেফারেন্স",
+    bpReference: "রেফারেন্স: প্রায় <120/80 mmHg",
+    medicinesTitle: "চলমান ওষুধ",
+    medicineName: "ওষুধের নাম",
+    dose: "ডোজ",
+    frequency: "ফ্রিকোয়েন্সি",
+    adherence: "নিয়মিততা / নোট",
+    addMedicine: "ওষুধ যোগ করুন",
+    remove: "সরান",
+    teleconsultTitle: "ডাক্তারের সঙ্গে কথা বলুন",
+    teleconsultSub: "eSanjeevani টেলিকনসালটেশন",
+    startConsult: "পরামর্শ শুরু করুন",
+  },
+  hi: {
+    language: "भाषा",
+    selectLanguage: "भाषा चुनें",
+    patient: "मरीज़",
+    asha: "आशा / एएनएम",
+    medical: "मेडिकल टीम",
+    signOut: "साइन आउट",
+    sendCode: "वेरिफिकेशन कोड भेजें",
+    verify: "सत्यापित करें और डैशबोर्ड खोलें",
+    changeEmail: "ईमेल बदलें",
+    patientDashboard: "मरीज़ केयर डैशबोर्ड",
+    ashaDashboard: "आशा फील्ड डैशबोर्ड",
+    medicalDashboard: "मेडिकल ऑपरेशंस डैशबोर्ड",
+    patientName: "मरीज़ का नाम",
+    age: "उम्र",
+    phone: "फोन",
+    triage: "ट्रायेज",
+    symptoms: "कारण / लक्षण",
+    saveCase: "केस सेव करें और सुविधा खोजें →",
+    createReferral: "रेफरल बनाएं →",
+    referralLive: "रेफरल सक्रिय है",
+    find: "खोजें",
+    checklist: "मरीज़ चेकलिस्ट",
+    incoming: "आने वाले",
+    priority: "प्राथमिकता",
+    emergency: "आपातकाल",
+    operationsQueue: "रेफरल ऑपरेशंस क्यू",
+    queueEmpty: "क्यू खाली है",
+    advance: "आगे बढ़ाएं",
+    closed: "बंद",
+    vitalsTitle: "मरीज़ के वाइटल्स और दवाएं",
+    bloodPressure: "ब्लड प्रेशर",
+    temperature: "तापमान",
+    pulse: "पल्स / हार्ट रेट",
+    spo2: "SpO₂",
+    updateVitals: "मरीज़ रिकॉर्ड अपडेट करें",
+    lastUpdated: "अंतिम अपडेट",
+    reference: "वयस्क संदर्भ",
+    bpReference: "संदर्भ: लगभग <120/80 mmHg",
+    medicinesTitle: "चल रही दवाएं",
+    medicineName: "दवा का नाम",
+    dose: "खुराक",
+    frequency: "आवृत्ति",
+    adherence: "अनुपालन / नोट्स",
+    addMedicine: "दवा जोड़ें",
+    remove: "हटाएं",
+    teleconsultTitle: "डॉक्टर से बात करें",
+    teleconsultSub: "eSanjeevani टेली-कंसल्टेशन",
+    startConsult: "कंसल्टेशन शुरू करें",
+  },
+  gu: {
+    language: "ભાષા",
+    selectLanguage: "ભાષા પસંદ કરો",
+    patient: "દર્દી",
+    asha: "આશા / ANM",
+    medical: "મેડિકલ ટીમ",
+    signOut: "સાઇન આઉટ",
+    vitalsTitle: "દર્દીના વાઇટલ્સ અને દવાઓ",
+    bloodPressure: "બ્લડ પ્રેશર",
+    temperature: "તાપમાન",
+    pulse: "પલ્સ / હાર્ટ રેટ",
+    spo2: "SpO₂",
+    updateVitals: "દર્દી રેકોર્ડ અપડેટ કરો",
+    medicinesTitle: "ચાલુ દવાઓ",
+    addMedicine: "દવા ઉમેરો",
+    teleconsultTitle: "ડૉક્ટર સાથે વાત કરો",
+    startConsult: "કન્સલ્ટેશન શરૂ કરો",
+  },
+  mr: {
+    language: "भाषा",
+    selectLanguage: "भाषा निवडा",
+    patient: "रुग्ण",
+    asha: "आशा / ANM",
+    medical: "वैद्यकीय टीम",
+    vitalsTitle: "रुग्णाचे व्हायटल्स आणि औषधे",
+    bloodPressure: "रक्तदाब",
+    temperature: "तापमान",
+    pulse: "नाडी / हृदयगती",
+    spo2: "SpO₂",
+    updateVitals: "रुग्ण नोंद अपडेट करा",
+    medicinesTitle: "सुरू असलेली औषधे",
+    addMedicine: "औषध जोडा",
+    teleconsultTitle: "डॉक्टरांशी बोला",
+    startConsult: "कन्सल्टेशन सुरू करा",
+  },
+  ta: {
+    language: "மொழி",
+    selectLanguage: "மொழியைத் தேர்ந்தெடுக்கவும்",
+    patient: "நோயாளர்",
+    asha: "ஆஷா / ANM",
+    medical: "மருத்துவக் குழு",
+    vitalsTitle: "நோயாளர் உயிரளவுகள் மற்றும் மருந்துகள்",
+    bloodPressure: "இரத்த அழுத்தம்",
+    temperature: "வெப்பநிலை",
+    pulse: "துடிப்பு / இதயத் துடிப்பு",
+    spo2: "SpO₂",
+    updateVitals: "நோயாளர் பதிவைப் புதுப்பிக்கவும்",
+    medicinesTitle: "தொடரும் மருந்துகள்",
+    addMedicine: "மருந்து சேர்க்கவும்",
+    teleconsultTitle: "மருத்துவருடன் பேசுங்கள்",
+    startConsult: "ஆலோசனையைத் தொடங்கவும்",
+  },
+  te: {
+    language: "భాష",
+    selectLanguage: "భాషను ఎంచుకోండి",
+    patient: "రోగి",
+    asha: "ఆశా / ANM",
+    medical: "మెడికల్ టీమ్",
+    vitalsTitle: "రోగి వైటల్స్ మరియు మందులు",
+    bloodPressure: "రక్తపోటు",
+    temperature: "ఉష్ణోగ్రత",
+    pulse: "పల్స్ / హార్ట్ రేట్",
+    spo2: "SpO₂",
+    updateVitals: "రోగి రికార్డును అప్‌డేట్ చేయండి",
+    medicinesTitle: "కొనసాగుతున్న మందులు",
+    addMedicine: "మందు జోడించండి",
+    teleconsultTitle: "డాక్టర్‌తో మాట్లాడండి",
+    startConsult: "కన్సల్టేషన్ ప్రారంభించండి",
+  },
+  kn: {
+    language: "ಭಾಷೆ",
+    selectLanguage: "ಭಾಷೆಯನ್ನು ಆಯ್ಕೆಮಾಡಿ",
+    patient: "ರೋಗಿ",
+    asha: "ಆಶಾ / ANM",
+    medical: "ವೈದ್ಯಕೀಯ ತಂಡ",
+    vitalsTitle: "ರೋಗಿಯ ವೈಟಲ್ಸ್ ಮತ್ತು ಔಷಧಿಗಳು",
+    bloodPressure: "ರಕ್ತದೊತ್ತಡ",
+    temperature: "ತಾಪಮಾನ",
+    pulse: "ನಾಡಿ / ಹೃದಯ ಬಡಿತ",
+    spo2: "SpO₂",
+    updateVitals: "ರೋಗಿ ದಾಖಲೆಯನ್ನು ನವೀಕರಿಸಿ",
+    medicinesTitle: "ನಡೆಯುತ್ತಿರುವ ಔಷಧಿಗಳು",
+    addMedicine: "ಔಷಧಿ ಸೇರಿಸಿ",
+    teleconsultTitle: "ವೈದ್ಯರೊಂದಿಗೆ ಮಾತನಾಡಿ",
+    startConsult: "ಸಲಹೆ ಪ್ರಾರಂಭಿಸಿ",
+  },
+  ml: {
+    language: "ഭാഷ",
+    selectLanguage: "ഭാഷ തിരഞ്ഞെടുക്കുക",
+    patient: "രോഗി",
+    asha: "ആശ / ANM",
+    medical: "മെഡിക്കൽ ടീം",
+    vitalsTitle: "രോഗിയുടെ വൈറ്റൽസും മരുന്നുകളും",
+    bloodPressure: "രക്തസമ്മർദ്ദം",
+    temperature: "താപനില",
+    pulse: "പൾസ് / ഹാർട്ട് റേറ്റ്",
+    spo2: "SpO₂",
+    updateVitals: "രോഗി രേഖ അപ്ഡേറ്റ് ചെയ്യുക",
+    medicinesTitle: "നിലവിലെ മരുന്നുകൾ",
+    addMedicine: "മരുന്ന് ചേർക്കുക",
+    teleconsultTitle: "ഡോക്ടറുമായി സംസാരിക്കുക",
+    startConsult: "കൺസൾട്ടേഷൻ ആരംഭിക്കുക",
+  },
+  pa: {
+    language: "ਭਾਸ਼ਾ",
+    selectLanguage: "ਭਾਸ਼ਾ ਚੁਣੋ",
+    patient: "ਮਰੀਜ਼",
+    asha: "ਆਸ਼ਾ / ANM",
+    medical: "ਮੈਡੀਕਲ ਟੀਮ",
+    vitalsTitle: "ਮਰੀਜ਼ ਦੇ ਵਾਈਟਲ ਅਤੇ ਦਵਾਈਆਂ",
+    bloodPressure: "ਬਲੱਡ ਪ੍ਰੈਸ਼ਰ",
+    temperature: "ਤਾਪਮਾਨ",
+    pulse: "ਪਲਸ / ਦਿਲ ਦੀ ਧੜਕਨ",
+    spo2: "SpO₂",
+    updateVitals: "ਮਰੀਜ਼ ਰਿਕਾਰਡ ਅਪਡੇਟ ਕਰੋ",
+    medicinesTitle: "ਚੱਲ ਰਹੀਆਂ ਦਵਾਈਆਂ",
+    addMedicine: "ਦਵਾਈ ਸ਼ਾਮਲ ਕਰੋ",
+    teleconsultTitle: "ਡਾਕਟਰ ਨਾਲ ਗੱਲ ਕਰੋ",
+    startConsult: "ਕੰਸਲਟੇਸ਼ਨ ਸ਼ੁਰੂ ਕਰੋ",
+  },
+  or: {
+    language: "ଭାଷା",
+    selectLanguage: "ଭାଷା ବାଛନ୍ତୁ",
+    patient: "ରୋଗୀ",
+    asha: "ଆଶା / ANM",
+    medical: "ମେଡିକାଲ ଟିମ୍",
+    vitalsTitle: "ରୋଗୀର ଭାଇଟାଲ୍ ଓ ଔଷଧ",
+    bloodPressure: "ରକ୍ତଚାପ",
+    temperature: "ତାପମାତ୍ରା",
+    pulse: "ପଲ୍ସ / ହାର୍ଟ ରେଟ୍",
+    spo2: "SpO₂",
+    updateVitals: "ରୋଗୀ ରେକର୍ଡ ଅପଡେଟ୍ କରନ୍ତୁ",
+    medicinesTitle: "ଚାଲୁଥିବା ଔଷଧ",
+    addMedicine: "ଔଷଧ ଯୋଡନ୍ତୁ",
+    teleconsultTitle: "ଡାକ୍ତରଙ୍କ ସହ କଥା ହୁଅନ୍ତୁ",
+    startConsult: "ପରାମର୍ଶ ଆରମ୍ଭ କରନ୍ତୁ",
+  },
+};
+const LanguageContext = createContext(null);
+export function LanguageProvider({ children }) {
+  const [language, setLanguage] = useState(() => {
+    const saved = readLS("sahyogcare_language");
+    return LANGUAGES.some((x) => x[0] === saved) ? saved : "en";
+  });
+  useEffect(() => {
+    writeLS("sahyogcare_language", language);
+    document.documentElement.lang = language;
+    document.documentElement.dir = ["ur", "sd", "ks"].includes(language) && LOCAL[language] ? "rtl" : "ltr";
+  }, [language]);
+  const t = (k) => LOCAL[language]?.[k] ?? EN[k] ?? k;
+  return <LanguageContext.Provider value={{ language, setLanguage, t }}>{children}</LanguageContext.Provider>;
+}
+export const useLanguage = () => useContext(LanguageContext);
+export function LanguageSidebar() {
+  const { language, setLanguage, t } = useLanguage();
+  const [open, setOpen] = useState(false);
+  return (
+    <aside className={`language-sidebar ${open ? "open" : ""}`}>
+      <button
+        className="language-toggle"
+        data-tour="language"
+        onClick={() => setOpen((v) => !v)}
+        aria-label={t("language")}
+      >
+        <span>文</span>
+        <b>{LANGUAGES.find((x) => x[0] === language)?.[2] || "English"}</b>
+        <small>☰</small>
+      </button>
+      <div className="language-panel">
+        <div className="language-panel-head">
+          <div>
+            <span className="eyebrow">{t("language")}</span>
+            <strong>{t("selectLanguage")}</strong>
+          </div>
+          <button className="language-close" onClick={() => setOpen(false)} aria-label={t("close")}>
+            ×
+          </button>
+        </div>
+        <div className="language-list">
+          {LANGUAGES.map(([code, name, native]) => (
+            <button
+              key={code}
+              className={`language-option ${language === code ? "active" : ""}`}
+              onClick={() => {
+                setLanguage(code);
+                setOpen(false);
+              }}
+            >
+              <span>文</span>
+              <div>
+                <b>{native}</b>
+                <small>{name}</small>
+              </div>
+              {language === code && <strong>✓</strong>}
+            </button>
+          ))}
+        </div>
+      </div>
+    </aside>
+  );
+}
