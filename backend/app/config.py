@@ -15,7 +15,22 @@ class Settings(BaseSettings):
 
     # "development" or "production". Production refuses to start with the default secret.
     environment: str = "development"
-    secret_key: str = "dev-only-change-me"
+    secret_key: str = "dev-only-secret-change-me-before-production"
+
+    access_token_minutes: int = 15
+    refresh_token_days: int = 7
+
+    # Email for one-time codes. If smtp_host is empty, codes are printed in the
+    # server log instead (development only).
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = "SahyogCare <no-reply@sahyogcare.test>"
+
+    @property
+    def is_development(self) -> bool:
+        return self.environment == "development"
 
     @property
     def database_url_for_sqlalchemy(self) -> str:
@@ -33,5 +48,7 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
-if settings.environment == "production" and settings.secret_key == "dev-only-change-me":
-    raise RuntimeError("Set SAHYOG_SECRET_KEY before running in production.")
+if settings.environment == "production" and (
+    settings.secret_key == "dev-only-secret-change-me-before-production" or len(settings.secret_key) < 32
+):
+    raise RuntimeError("Set SAHYOG_SECRET_KEY to a random value of at least 32 characters in production.")
