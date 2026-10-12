@@ -43,7 +43,12 @@ class Settings(BaseSettings):
     # Real email addresses (comma-separated) that are made coordinators when the
     # server starts. The coordinator then adds every other user from the app.
     coordinator_emails: str = ""
+    # District given to coordinators from the setting above and to people who sign up.
     coordinator_district: str = "Nadia"
+    # Anyone may sign up with their email. ASHAs (who only ever see their own patients)
+    # can be approved automatically; hospital staff, doctors and coordinators always
+    # need a coordinator's approval because they see other people's patients.
+    auto_approve_asha: bool = False
 
     @property
     def is_development(self) -> bool:

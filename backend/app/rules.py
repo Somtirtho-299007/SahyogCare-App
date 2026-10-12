@@ -196,6 +196,8 @@ OTP_LENGTH = 6
 OTP_VALID_FOR = timedelta(minutes=5)
 OTP_MAX_ATTEMPTS = 5
 OTP_RESEND_AFTER = timedelta(seconds=60)
+# Login code requests allowed per IP address per minute (anyone may sign up).
+OTP_REQUESTS_PER_MINUTE = 10
 
 
 # ---------- Referrals ----------

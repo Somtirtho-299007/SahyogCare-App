@@ -15,6 +15,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
+from sqlalchemy import true
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -93,6 +94,9 @@ class User(Base):
     facility_id: Mapped[str | None] = mapped_column(ForeignKey("facilities.id"))
     district: Mapped[str] = mapped_column(String(80))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # False for people who signed up themselves and are waiting for the coordinator
+    # to approve their role. They can log in but see no records until approved.
+    approved: Mapped[bool] = mapped_column(Boolean, default=True, server_default=true())
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
@@ -275,3 +279,25 @@ class BedWard(Base):
     updated_by_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"))
 
     facility: Mapped[Facility] = relationship(back_populates="wards")
+
+
+class AccessRequest(Base):
+    """Someone who signed up asks for a role (and hospital); the coordinator approves or rejects."""
+
+    __tablename__ = "access_requests"
+    __table_args__ = (
+        _enum_check("requested_role", list(Role)),
+        _enum_check("status", ["PENDING", "APPROVED", "REJECTED"]),
+    )
+
+    id: Mapped[str] = mapped_column(ID, primary_key=True, default=new_id)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    requested_role: Mapped[str] = mapped_column(String(20))
+    facility_id: Mapped[str | None] = mapped_column(ForeignKey("facilities.id"))
+    name: Mapped[str] = mapped_column(String(120))
+    note: Mapped[str | None] = mapped_column(String(300))  # e.g. "ASHA, Chakdaha block, ID 1234"
+    status: Mapped[str] = mapped_column(String(20), default="PENDING", index=True)
+    decided_by_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"))
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    decision_note: Mapped[str | None] = mapped_column(String(300))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

@@ -19,6 +19,7 @@ from app.db import SessionLocal
 from app.errors import install_error_handlers
 from app.migrate import run_migrations
 from app.routers import (
+    access,
     auth,
     facilities,
     followups,
@@ -70,6 +71,7 @@ app.include_router(insights.router, prefix=API)
 app.include_router(sync.router, prefix=API)
 app.include_router(public.router, prefix=API)
 app.include_router(users.router, prefix=API)
+app.include_router(access.router, prefix=API)
 
 
 @app.get("/", include_in_schema=False)

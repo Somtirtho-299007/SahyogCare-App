@@ -119,6 +119,8 @@ class UserOut(BaseModel):
     role: str
     facility_id: str | None
     district: str
+    # False until the coordinator approves a self sign-up; such a user sees no records yet.
+    approved: bool = True
 
 
 class TokensOut(BaseModel):

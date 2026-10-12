@@ -79,13 +79,21 @@ def load_active_user(db: Session, user_id: str) -> User:
     return user
 
 
-def current_user(
+def current_user_any(
     creds: HTTPAuthorizationCredentials | None = Depends(_bearer),
     db: Session = Depends(get_db),
 ) -> User:
+    """Any logged-in user, including people still waiting for approval."""
     if creds is None or creds.scheme.lower() != "bearer":
         raise ApiError(401, "AUTH_REQUIRED", "Please log in.")
     return load_active_user(db, read_token(creds.credentials, "access"))
+
+
+def current_user(user: User = Depends(current_user_any)) -> User:
+    """A logged-in, approved user. Everything that touches records uses this."""
+    if not user.approved:
+        raise ApiError(403, "ACCOUNT_PENDING", "Your account is waiting for the coordinator's approval.")
+    return user
 
 
 def require_roles(*roles: str) -> Callable[..., User]:
