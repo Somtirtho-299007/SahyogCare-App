@@ -54,7 +54,10 @@ TRANSITIONS: dict[tuple[Status, Status], frozenset[str]] = {
     (Status.FOLLOW_UP_DUE, Status.CLOSED): frozenset(
         {Role.WORKER, Role.DOCTOR, Role.FACILITY_STAFF, Role.COORDINATOR}
     ),
-    (Status.FOLLOW_UP_DUE, Status.OVERDUE): frozenset({SYSTEM}),
+    # SYSTEM when the due date passes; the ASHA when she reports the visit was missed.
+    (Status.FOLLOW_UP_DUE, Status.OVERDUE): frozenset({SYSTEM, Role.WORKER}),
+    # A late follow-up still counts once it happens.
+    (Status.OVERDUE, Status.CLOSED): frozenset({Role.WORKER, Role.COORDINATOR}),
     (Status.OVERDUE, Status.ESCALATED): frozenset({Role.COORDINATOR}),
     (Status.ESCALATED, Status.CLOSED): frozenset({Role.COORDINATOR}),
 }
@@ -193,3 +196,26 @@ OTP_LENGTH = 6
 OTP_VALID_FOR = timedelta(minutes=5)
 OTP_MAX_ATTEMPTS = 5
 OTP_RESEND_AFTER = timedelta(seconds=60)
+
+
+# ---------- Referrals ----------
+
+DEFAULT_FOLLOW_UP_DAYS = 7
+URGENCY_ORDER = {Triage.EMERGENCY: 0, Triage.PRIORITY: 1, Triage.ROUTINE: 2}
+
+# Shown to patients on the public status page.
+PATIENT_CHECKLIST = [
+    "Carry your referral code or referral pass",
+    "Bring your current medicines and any reports",
+    "Keep a phone number reachable",
+    "Show your referral pass at the facility desk",
+]
+
+# Public status lookups allowed per IP address per minute.
+PUBLIC_LOOKUPS_PER_MINUTE = 5
+
+
+# ---------- Watchdog ----------
+
+# How often the background watchdog runs.
+WATCHDOG_EVERY = timedelta(minutes=5)

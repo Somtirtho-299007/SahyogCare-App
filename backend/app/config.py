@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     environment: str = "development"
     secret_key: str = "dev-only-secret-change-me-before-production"
 
+    # Background job that flags silent referrals and overdue follow-ups.
+    watchdog_enabled: bool = True
+
     access_token_minutes: int = 15
     refresh_token_days: int = 7
 
