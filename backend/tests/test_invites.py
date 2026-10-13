@@ -108,3 +108,37 @@ def test_office_passphrase_needs_configuring_and_limits_guessing(client, db, aut
     assert post(client, "/invite-codes/office", me, body).json()["error"]["code"] == "PASSPHRASE_INVALID"
     codes = [post(client, "/invite-codes/office", me, {**body, "passphrase": f"try{i}"}).status_code for i in range(5)]
     assert codes[-1] == 429
+
+
+def test_built_in_office_passphrase_needs_no_server_setting(client, db, auth, monkeypatch):
+    from app import offices
+    from app.config import settings
+
+    phrase = offices.new_passphrase("Kalyani")
+    monkeypatch.setattr(settings, "office_passphrases", "")
+    monkeypatch.setattr(offices, "OFFICES", {**offices.OFFICES, "Kalyani": offices.hash_passphrase(phrase)})
+    # A new area with a built-in passphrase is served at once, with no server setting.
+    assert "Kalyani" in client.get(f"{API}/public/districts").json()
+
+    me, _ = sign_up(client, "do.kalyani@gmail.com")
+    other = offices.new_passphrase("Kalyani")
+    assert post(client, "/invite-codes/office", me, {"district": "Kalyani", "name": "DO",
+                                                     "passphrase": other}).status_code == 400
+    # Typing it in small letters, with spaces instead of dashes, still works.
+    typed = phrase.lower().replace("-", " ")
+    r = post(client, "/invite-codes/office", me, {"district": "kalyani", "name": "Kalyani DO", "passphrase": typed})
+    assert r.status_code == 200, r.text
+    assert r.json()["role"] == "COORDINATOR" and r.json()["district"] == "Kalyani"
+
+
+def test_built_in_passphrases_are_only_stored_as_hashes():
+    from app import offices
+
+    assert {"Nadia", "Naihati"} <= set(offices.OFFICES)
+    for stored in offices.OFFICES.values():
+        algorithm, iterations, salt, digest = stored.split("$")
+        assert algorithm == "pbkdf2_sha256" and int(iterations) >= 300_000
+        assert len(salt) == 32 and len(digest) == 64
+    # One area's passphrase never opens another area.
+    phrase = offices.new_passphrase("Nadia")
+    assert not offices.matches(phrase, offices.OFFICES["Nadia"])
