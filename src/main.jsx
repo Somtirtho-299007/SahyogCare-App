@@ -1484,7 +1484,7 @@ function AshaDashboard({ toast }) {
     setBusy(true);
     try {
       await api.post(`/follow-ups/${followUp.id}/${kind}`);
-      toast(kind === "complete" ? t("followUpDoneToast") : t("followUpMissedToast"));
+      toast(kind === "sent" ? t("followUpSentToast") : t("followUpMissedToast"));
       const fresh = await api.get(`/referrals/${referral.id}`);
       setReferral(fresh);
       load();
@@ -1692,13 +1692,20 @@ function AshaDashboard({ toast }) {
                     <b>{t("followUpDue")}:</b> {new Date(followUp.due_at).toLocaleDateString()}
                     {followUp.is_late ? ` · ${t("followUpLate")}` : ""}
                   </p>
+                  {followUp.sent_at && (
+                    <p className="muted">
+                      ✓ {t("sentForCheckup")} · {new Date(followUp.sent_at).toLocaleDateString()} · {t("waitingHospitalCheckup")}
+                    </p>
+                  )}
                   <div className="action-row">
-                    <button className="primary-btn" onClick={() => finishFollowUp("complete")} disabled={busy}>
-                      {t("followUpDone")}
-                    </button>
+                    {!followUp.sent_at && (
+                      <button className="primary-btn" onClick={() => finishFollowUp("sent")} disabled={busy}>
+                        {t("sendForCheckup")}
+                      </button>
+                    )}
                     {referral.status === "FOLLOW_UP_DUE" && (
                       <button className="secondary-btn" onClick={() => finishFollowUp("miss")} disabled={busy}>
-                        {t("visitMissed")}
+                        {t("couldntGo")}
                       </button>
                     )}
                   </div>
@@ -2095,7 +2102,10 @@ const NEXT_ACTION = {
   ACCEPTED: { path: "arrival", label: "recordArrival", role: "FACILITY_STAFF" },
   ARRIVAL_RECORDED: { path: "consultation", label: "consulted", role: "DOCTOR" },
   CONSULTED: { path: "outcome", label: "recordOutcome", role: "DOCTOR" },
-  OVERDUE: { path: "escalate", label: "escalate", role: "COORDINATOR" },
+  // The follow-up checkup happens at the hospital, so staff or the doctor confirm it (the ASHA only sends the patient).
+  FOLLOW_UP_DUE: { path: "close", label: "checkupDone", role: "FACILITY_STAFF", also: "DOCTOR" },
+  OVERDUE: { path: "close", label: "checkupDone", role: "FACILITY_STAFF", also: "DOCTOR" },
+  ESCALATED: { path: "close", label: "checkupDone", role: "FACILITY_STAFF", also: "DOCTOR" },
 };
 const ROLE_NAME = { FACILITY_STAFF: "facility staff", DOCTOR: "doctor", COORDINATOR: "coordinator" };
 
@@ -2198,7 +2208,7 @@ function MedicalDashboard({ user, toast }) {
           <div className="queue" data-tour="queue">
             {queue.map((r) => {
               const next = NEXT_ACTION[r.status];
-              const mine = next && next.role === user?.role;
+              const mine = next && (next.role === user?.role || next.also === user?.role);
               return (
                 <div className="queue-item" key={r.id} style={rejecting === r.id ? { flexWrap: "wrap" } : undefined}>
                   <div>
@@ -2215,6 +2225,14 @@ function MedicalDashboard({ user, toast }) {
                       {r.status === "REROUTED" && <span className="chip bed-released">Patient sent elsewhere</span>}
                     </div>
                     <AmbulanceInfo amb={r.ambulance} />
+                    {r.follow_up && r.is_open && r.follow_up.status !== "COMPLETED" && (
+                      <div className="ward-chips">
+                        <span className="chip">
+                          {t("followUpDue")}: {new Date(r.follow_up.due_at).toLocaleDateString()}
+                        </span>
+                        {r.follow_up.sent_at && <span className="chip bed-held">✓ {t("ashaSentPatient")}</span>}
+                      </div>
+                    )}
                   </div>
                   <div className="queue-actions">
                     <span className="status-badge">{pretty(r.status)}</span>
