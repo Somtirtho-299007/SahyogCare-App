@@ -20,7 +20,8 @@ The backend is complete and the frontend (`../src`) uses it. To run both togethe
 
 **Watchdog, follow-ups and dashboards:**
 - Watchdog runs every 5 minutes: alerts the ASHA when a referral is not accepted or the patient has not arrived in time, alerts the coordinator at twice the limit, and marks follow-ups overdue (`POST /watchdog/run` runs it now)
-- Follow-ups: `/follow-ups` list, `complete` (closes the referral, late visits count), `miss`; coordinator `POST /referrals/{id}/escalate`
+- Follow-up checkups: the ASHA sends the patient (`/follow-ups/{id}/sent`, the hospital is told to expect them) or reports they could not go (`miss`); only the receiving hospital's staff or doctor confirms the checkup (`complete`, closes the referral, late checkups count); coordinator `POST /referrals/{id}/escalate`
+- Hospital steps (accept, reject, arrival, consultation, outcome, checkup done) can only be taken by that hospital's staff or doctor; the ASHA and coordinator are refused
 - `GET /dashboard/summary`: the same counts for every role from one definition of "open"; coordinators also see which facilities are slow to accept or reject most
 - `GET /me/activity-summary?month=YYYY-MM`: the ASHA's monthly record of work
 
@@ -110,7 +111,7 @@ to hospitals in their own area. People choose their area when they sign up.
 
 - `SAHYOG_DISTRICTS=Nadia,Naihati`: the areas this deployment serves
 - `SAHYOG_COORDINATOR_EMAILS=you@gmail.com:Nadia,officer@gmail.com:Naihati`: first coordinator of each area
-- `SAHYOG_OFFICE_PASSPHRASES=Naihati:<phrase>,Nadia:<phrase>`: a fixed passphrase per area that only its district office knows; entering it makes that person the area's coordinator at once (5 tries per 10 minutes)
+- District office passphrases are built in (`app/offices.py`, stored only as salted hashes): one permanent passphrase per area, no server setting needed. Entering it makes that person the area's coordinator at once (5 tries per 10 minutes). New area or leaked passphrase: `python -m app.offices new "Area"` and add the printed line. `SAHYOG_OFFICE_PASSPHRASES` is optional and only adds or overrides one on the server
 - `SAHYOG_DEMO_DATA=false` on the live server: hides demo hospitals and switches off the `@sahyogcare.test` accounts
 
 ## Who can log in
