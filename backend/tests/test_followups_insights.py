@@ -5,6 +5,7 @@ from sqlalchemy import select
 from app.models import FollowUp, Notification, Referral, User
 from app.timeutil import utcnow
 from app.watchdog import run_watchdog
+from test_beds import headers_of
 from test_referrals import API, make_referral, new_user, post
 
 
@@ -78,8 +79,8 @@ def test_overdue_follow_up_then_late_completion(client, db, auth):
     # The coordinator sees it in the district list.
     assert client.get(f"{API}/follow-ups", headers=auth("COORDINATOR")).json()[0]["status"] == "OVERDUE"
 
-    # The ASHA visits late: that still completes it.
-    done = post(client, f"/follow-ups/{fu_list[0]['id']}/complete", asha, {"note": "Visited, recovering"}).json()
+    # The checkup happens late at the hospital: the hospital confirms it, and that still completes it.
+    done = post(client, f"/follow-ups/{fu_list[0]['id']}/complete", doctor, {"note": "Seen, recovering"}).json()
     assert done["status"] == "COMPLETED" and done["referral_status"] == "CLOSED"
     assert client.get(f"{API}/follow-ups", headers=asha).json() == []
 
@@ -107,8 +108,52 @@ def test_follow_ups_are_private(client, db, auth):
     other = new_user(db, "asha9@sahyogcare.test", "WORKER")
     assert client.get(f"{API}/follow-ups", headers=other).json() == []
     fid = client.get(f"{API}/follow-ups", headers=asha).json()[0]["id"]
-    assert post(client, f"/follow-ups/{fid}/complete", other).status_code == 404
-    assert client.get(f"{API}/follow-ups", headers=staff).status_code == 403
+    assert post(client, f"/follow-ups/{fid}/sent", other).status_code == 404
+    # A hospital sees only the checkups due at its own hospital.
+    assert [f["id"] for f in client.get(f"{API}/follow-ups", headers=staff).json()] == [fid]
+    other_staff = headers_of(db, "staff.nadia@sahyogcare.test")
+    assert client.get(f"{API}/follow-ups", headers=other_staff).json() == []
+    assert post(client, f"/follow-ups/{fid}/complete", other_staff).status_code == 404
+
+
+def test_asha_sends_patient_and_only_the_hospital_confirms(client, db, auth):
+    asha, staff, doctor = auth("WORKER"), auth("FACILITY_STAFF"), auth("DOCTOR")
+    rid = make_referral(client, db, asha)["id"]
+    for path, h in (("accept", staff), ("arrival", staff), ("consultation", doctor), ("outcome", doctor)):
+        post(client, f"/referrals/{rid}/{path}", h)
+    fid = client.get(f"{API}/follow-ups", headers=asha).json()[0]["id"]
+
+    # The ASHA sends the patient back for the checkup; the hospital desk is told to expect them.
+    sent = post(client, f"/follow-ups/{fid}/sent", asha, {"note": "Coming Monday morning"}).json()
+    assert sent["sent_at"] is not None and sent["status"] == "DUE"
+    staff_id = db.scalar(select(User.id).where(User.email == "staff@sahyogcare.test"))
+    msgs = list(db.scalars(select(Notification.message).where(Notification.user_id == staff_id,
+                                                               Notification.kind == "FOLLOW_UP_SENT")))
+    assert msgs and "Coming Monday morning" in msgs[0]
+    assert client.get(f"{API}/referrals/{rid}", headers=asha).json()["follow_up"]["sent_at"] is not None
+
+    # The ASHA cannot mark the checkup done, by either route; the hospital and coordinator cannot "send".
+    assert post(client, f"/follow-ups/{fid}/complete", asha).status_code == 403
+    assert post(client, f"/referrals/{rid}/close", asha).status_code == 403
+    assert post(client, f"/follow-ups/{fid}/sent", staff).status_code == 403
+
+    # The hospital confirms the checkup, and the ASHA is told.
+    done = post(client, f"/follow-ups/{fid}/complete", staff, {"note": "Checkup done, fine"}).json()
+    assert done["status"] == "COMPLETED" and done["referral_status"] == "CLOSED"
+    assert "STATUS_CLOSED" in kinds_for(db, "asha@sahyogcare.test")
+    assert post(client, f"/follow-ups/{fid}/sent", asha).json()["error"]["code"] == "ALREADY_COMPLETED"
+
+
+def test_follow_up_steps_work_offline(client, db, auth):
+    asha, staff, doctor = auth("WORKER"), auth("FACILITY_STAFF"), auth("DOCTOR")
+    rid = make_referral(client, db, asha)["id"]
+    for path, h in (("accept", staff), ("arrival", staff), ("consultation", doctor), ("outcome", doctor)):
+        post(client, f"/referrals/{rid}/{path}", h)
+    fid = client.get(f"{API}/follow-ups", headers=asha).json()[0]["id"]
+    op = lambda key, kind: {"operations": [{"idempotency_key": key, "type": kind, "payload": {"follow_up_id": fid}}]}
+    assert post(client, "/sync/batch", asha, op("f1", "SEND_FOLLOW_UP")).json()["results"][0]["status"] == "ok"
+    assert post(client, "/sync/batch", asha, op("f2", "COMPLETE_FOLLOW_UP")).json()["results"][0]["status"] != "ok"
+    assert post(client, "/sync/batch", staff, op("f3", "COMPLETE_FOLLOW_UP")).json()["results"][0]["status"] == "ok"
 
 
 def test_watchdog_endpoint_is_for_coordinators(client, auth):
@@ -130,7 +175,7 @@ def test_activity_summary(client, db, auth):
     for path, h in (("accept", staff), ("arrival", staff), ("consultation", doctor), ("outcome", doctor)):
         post(client, f"/referrals/{a}/{path}", h)
     fid = client.get(f"{API}/follow-ups", headers=asha).json()[0]["id"]
-    post(client, f"/follow-ups/{fid}/complete", asha)
+    post(client, f"/follow-ups/{fid}/complete", staff)
 
     s = client.get(f"{API}/me/activity-summary", headers=asha).json()
     assert (s["referrals_created"], s["referrals_completed"], s["referrals_rejected"],

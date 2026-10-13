@@ -21,7 +21,7 @@ def test_happy_path_through_the_state_machine():
         (Role.DOCTOR, Status.ARRIVAL_RECORDED, Status.CONSULTED),
         (Role.DOCTOR, Status.CONSULTED, Status.OUTCOME_RECORDED),
         (SYSTEM, Status.OUTCOME_RECORDED, Status.FOLLOW_UP_DUE),
-        (Role.WORKER, Status.FOLLOW_UP_DUE, Status.CLOSED),
+        (Role.DOCTOR, Status.FOLLOW_UP_DUE, Status.CLOSED),
     ]
     for actor, current, target in steps:
         check_transition(actor, current, target)  # must not raise
@@ -43,8 +43,22 @@ def test_who_marks_overdue():
     with pytest.raises(TransitionError):
         check_transition(Role.COORDINATOR, Status.FOLLOW_UP_DUE, Status.OVERDUE)
     check_transition(SYSTEM, Status.FOLLOW_UP_DUE, Status.OVERDUE)  # due date passed
-    check_transition(Role.WORKER, Status.FOLLOW_UP_DUE, Status.OVERDUE)  # ASHA reports a missed visit
-    check_transition(Role.WORKER, Status.OVERDUE, Status.CLOSED)  # late visit still completes
+    check_transition(Role.WORKER, Status.FOLLOW_UP_DUE, Status.OVERDUE)  # patient could not go
+    check_transition(Role.FACILITY_STAFF, Status.OVERDUE, Status.CLOSED)  # late checkup still completes
+
+
+def test_only_the_hospital_moves_the_hospital_steps():
+    hospital_steps = [
+        (Status.CREATED, Status.ACCEPTED), (Status.CREATED, Status.REJECTED),
+        (Status.ACCEPTED, Status.ARRIVAL_RECORDED), (Status.ARRIVAL_RECORDED, Status.CONSULTED),
+        (Status.CONSULTED, Status.OUTCOME_RECORDED),
+        (Status.FOLLOW_UP_DUE, Status.CLOSED), (Status.OVERDUE, Status.CLOSED),
+    ]
+    for current, target in hospital_steps:
+        for outsider in (Role.WORKER, Role.COORDINATOR):
+            with pytest.raises(TransitionError) as e:
+                check_transition(outsider, current, target)
+            assert e.value.code == "FORBIDDEN"
 
 
 def test_closed_referrals_cannot_move():

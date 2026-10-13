@@ -85,7 +85,9 @@ def test_full_referral_journey(client, db, auth):
     due = as_utc(db.scalar(select(FollowUp.due_at)))
     assert timedelta(days=2, hours=23) < due - utcnow() <= timedelta(days=3)
 
-    r = post(client, f"/referrals/{rid}/close", asha, {"note": "Recovered"}).json()
+    # The ASHA cannot confirm the follow-up checkup; only the hospital can.
+    assert post(client, f"/referrals/{rid}/close", asha).status_code == 403
+    r = post(client, f"/referrals/{rid}/close", doctor, {"note": "Recovered"}).json()
     assert r["status"] == "CLOSED" and not r["is_open"]
     assert r["follow_up"]["status"] == "COMPLETED"
     assert [e["to_status"] for e in r["events"]] == [
@@ -95,7 +97,7 @@ def test_full_referral_journey(client, db, auth):
     # The ASHA was told about every step someone else took.
     kinds = {n["kind"] for n in client.get(f"{API}/notifications", headers=asha).json()}
     assert {"STATUS_ACCEPTED", "STATUS_ARRIVAL_RECORDED", "STATUS_CONSULTED", "STATUS_FOLLOW_UP_DUE"} <= kinds
-    assert "STATUS_CLOSED" not in kinds  # she closed it herself
+    assert "STATUS_CLOSED" in kinds  # the hospital closed it, so she is told
 
     # Accepting taught the system the service is available there.
     svc = db.scalar(select(FacilityService).where(FacilityService.service == "General Medicine",
