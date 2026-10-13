@@ -43,8 +43,9 @@ class Settings(BaseSettings):
     # Real email addresses (comma-separated) that are made coordinators when the
     # server starts. The coordinator then adds every other user from the app.
     coordinator_emails: str = ""
-    # Areas this deployment serves, comma-separated. Each area is fully separate: its
-    # coordinator sees and approves only its own people, hospitals and referrals.
+    # Extra areas this deployment serves, comma-separated. Every area with a district
+    # office passphrase in app/offices.py is served anyway, so this is normally left alone.
+    # Each area is fully separate: its coordinator sees only its own people, hospitals and referrals.
     districts: str = "Nadia,Naihati"
     # Area given to coordinators listed without one (see coordinator_entries).
     coordinator_district: str = "Nadia"
@@ -53,10 +54,8 @@ class Settings(BaseSettings):
     # need a coordinator's approval because they see other people's patients.
     auto_approve_asha: bool = False
 
-    # Fixed passphrase per area that only that area's district office knows, e.g.
-    # "Naihati:naihati_do_<4 secret digits>,Nadia:<another>". Whoever logs in with
-    # their own email and enters it becomes that area's coordinator at once.
-    # Set it only on the server (Render), never in the code or in screenshots.
+    # District office passphrases are built in (app/offices.py). This optional setting
+    # can add or override one on the server: "Area:passphrase,Area2:passphrase".
     office_passphrases: str = ""
 
     # Fake demo hospitals and @sahyogcare.test accounts. Set to false on the live
@@ -78,7 +77,13 @@ class Settings(BaseSettings):
 
     @property
     def district_list(self) -> list[str]:
-        return [d.strip() for d in self.districts.split(",") if d.strip()]
+        from app.offices import OFFICES  # every area with a district office is served
+
+        areas = [d.strip() for d in self.districts.split(",") if d.strip()]
+        for name in OFFICES:
+            if name.lower() not in {a.lower() for a in areas}:
+                areas.append(name)
+        return areas
 
     def canonical_district(self, name: str | None) -> str | None:
         """The configured spelling of an area name, or None when it is not served here."""
