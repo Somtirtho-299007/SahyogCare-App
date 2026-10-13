@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app import offices
 from app.db import get_db
 from app.errors import ApiError
 from app.models import AccessRequest, AuditLog, Facility, InviteCode, Notification, User
@@ -159,6 +160,15 @@ def redeem(body: RedeemIn, user: User = Depends(current_user_any), db: Session =
     return UserOut.model_validate(user)
 
 
+def _office_passphrase_ok(area: str, passphrase: str) -> bool:
+    """The built-in passphrase (app/offices.py), or one set on the server, if any."""
+    stored = offices.stored_hash(area)
+    built_in = stored is not None and offices.matches(passphrase, stored)
+    extra = settings.office_passphrase(area)
+    on_server = extra is not None and hmac.compare_digest(passphrase.strip().encode(), extra.encode())
+    return built_in or on_server
+
+
 class OfficeJoinIn(BaseModel):
     district: str = Field(min_length=1, max_length=80)
     name: str = Field(min_length=1, max_length=120)
@@ -173,9 +183,8 @@ def join_as_office(body: OfficeJoinIn, user: User = Depends(current_user_any),
         raise ApiError(409, "ALREADY_APPROVED", "Your account already has a role.")
     office_limiter.check(user.id)
     area = settings.canonical_district(body.district)
-    expected = settings.office_passphrase(area) if area else None
     # Same answer for an unknown area, an area without a passphrase, and a wrong passphrase.
-    if expected is None or not hmac.compare_digest(body.passphrase.strip().encode(), expected.encode()):
+    if not area or not _office_passphrase_ok(area, body.passphrase):
         raise ApiError(400, "PASSPHRASE_INVALID", "This passphrase is not right for this area.")
 
     now = utcnow()
