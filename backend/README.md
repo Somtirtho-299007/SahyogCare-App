@@ -111,7 +111,7 @@ to hospitals in their own area. People choose their area when they sign up.
 
 - `SAHYOG_DISTRICTS=Nadia,Naihati`: the areas this deployment serves
 - `SAHYOG_COORDINATOR_EMAILS=you@gmail.com:Nadia,officer@gmail.com:Naihati`: first coordinator of each area
-- District office passphrases are built in (`app/offices.py`, stored only as salted hashes): one permanent passphrase per area, no server setting needed. Entering it makes that person the area's coordinator at once (5 tries per 10 minutes). New area or leaked passphrase: `python -m app.offices new "Area"` and add the printed line. `SAHYOG_OFFICE_PASSPHRASES` is optional and only adds or overrides one on the server
+- `SAHYOG_OFFICE_PASSPHRASES=Naihati:<phrase>,Nadia:<phrase>`: a fixed passphrase per area that only its district office knows; entering it makes that person the area's coordinator at once (5 tries per 10 minutes)
 - `SAHYOG_DEMO_DATA=false` on the live server: hides demo hospitals and switches off the `@sahyogcare.test` accounts
 
 ## Who can log in
