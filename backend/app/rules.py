@@ -53,15 +53,17 @@ TRANSITIONS: dict[tuple[Status, Status], frozenset[str]] = {
     (Status.ARRIVAL_RECORDED, Status.CONSULTED): frozenset({Role.DOCTOR}),
     (Status.CONSULTED, Status.OUTCOME_RECORDED): frozenset({Role.DOCTOR}),
     (Status.OUTCOME_RECORDED, Status.FOLLOW_UP_DUE): frozenset({SYSTEM}),
-    (Status.FOLLOW_UP_DUE, Status.CLOSED): frozenset(
-        {Role.WORKER, Role.DOCTOR, Role.FACILITY_STAFF, Role.COORDINATOR}
-    ),
-    # SYSTEM when the due date passes; the ASHA when she reports the visit was missed.
+    # The follow-up checkup happens at the hospital, so only the hospital confirms it.
+    # The ASHA's part is sending the patient (POST /follow-ups/{id}/sent), not closing the case.
+    (Status.FOLLOW_UP_DUE, Status.CLOSED): frozenset({Role.DOCTOR, Role.FACILITY_STAFF}),
+    # SYSTEM when the due date passes; the ASHA when she reports the patient could not go.
     (Status.FOLLOW_UP_DUE, Status.OVERDUE): frozenset({SYSTEM, Role.WORKER}),
-    # A late follow-up still counts once it happens.
-    (Status.OVERDUE, Status.CLOSED): frozenset({Role.WORKER, Role.COORDINATOR}),
+    # A late checkup still counts once the hospital confirms it.
+    (Status.OVERDUE, Status.CLOSED): frozenset({Role.DOCTOR, Role.FACILITY_STAFF}),
     (Status.OVERDUE, Status.ESCALATED): frozenset({Role.COORDINATOR}),
-    (Status.ESCALATED, Status.CLOSED): frozenset({Role.COORDINATOR}),
+    # After escalation: the hospital confirms a late checkup, or the district office closes the case
+    # (for example, the patient moved away).
+    (Status.ESCALATED, Status.CLOSED): frozenset({Role.DOCTOR, Role.FACILITY_STAFF, Role.COORDINATOR}),
     # Before the patient reaches the hospital, the ASHA or coordinator may send her elsewhere.
     (Status.CREATED, Status.REROUTED): frozenset({Role.WORKER, Role.COORDINATOR}),
     (Status.ACCEPTED, Status.REROUTED): frozenset({Role.WORKER, Role.COORDINATOR}),

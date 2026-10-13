@@ -298,6 +298,7 @@ class EventOut(BaseModel):
 class FollowUpOut(BaseModel):
     due_at: datetime
     status: str
+    sent_at: datetime | None = None  # when the ASHA sent the patient for the checkup
 
 
 class FacilityBrief(BaseModel):
@@ -437,6 +438,7 @@ class FollowUpItemOut(BaseModel):
     due_at: datetime
     status: str  # DUE | OVERDUE | ESCALATED | COMPLETED
     is_late: bool
+    sent_at: datetime | None = None
 
 
 # ---------- Insights ----------

@@ -210,7 +210,8 @@ def referral_out(db: Session, referral: Referral) -> ReferralOut:
             )
             for e in referral.events
         ],
-        follow_up=FollowUpOut(due_at=as_utc(follow_up.due_at), status=follow_up.status) if follow_up else None,
+        follow_up=FollowUpOut(due_at=as_utc(follow_up.due_at), status=follow_up.status,
+                              sent_at=as_utc(follow_up.sent_at)) if follow_up else None,
         bed=_bed_out(db, referral),
         ambulance=_ambulance_out(db, referral),
         rerouted_from_code=db.scalar(select(Referral.code).where(Referral.id == referral.rerouted_from_id))

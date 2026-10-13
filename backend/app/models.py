@@ -229,6 +229,8 @@ class FollowUp(Base):
     due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     status: Mapped[str] = mapped_column(String(20), default="DUE")
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # When the ASHA told the patient to go for the follow-up checkup.
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
