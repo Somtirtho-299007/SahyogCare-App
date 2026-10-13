@@ -50,7 +50,7 @@ router = APIRouter(prefix="/sync", tags=["sync"])
 OpType = Literal[
     "CREATE_PATIENT", "CREATE_ENCOUNTER", "CREATE_REFERRAL", "SCAN_PASS",
     "ACCEPT", "REJECT", "ARRIVAL", "CONSULTATION", "OUTCOME", "CLOSE", "ESCALATE",
-    "COMPLETE_FOLLOW_UP", "MISS_FOLLOW_UP",
+    "COMPLETE_FOLLOW_UP", "MISS_FOLLOW_UP", "SEND_FOLLOW_UP",
     "REROUTE", "REQUEST_AMBULANCE", "DISPATCH_AMBULANCE", "AMBULANCE_PICKED_UP",
 ]
 
@@ -115,7 +115,8 @@ HANDLERS: dict[str, tuple[set[str] | None, Callable[[dict, User, Session], BaseM
     "OUTCOME": (None, lambda p, u, db: referrals.outcome(_pop(p, "referral_id"), OutcomeIn(**p), u, db)),
     "CLOSE": (None, lambda p, u, db: referrals.close(_pop(p, "referral_id"), _note(p), u, db)),
     "ESCALATE": (None, lambda p, u, db: referrals.escalate(_pop(p, "referral_id"), _note(p), u, db)),
-    "COMPLETE_FOLLOW_UP": ({Role.WORKER, Role.COORDINATOR}, lambda p, u, db: followups.complete(
+    "SEND_FOLLOW_UP": ({Role.WORKER}, lambda p, u, db: followups.sent(_pop(p, "follow_up_id"), _note(p), u, db)),
+    "COMPLETE_FOLLOW_UP": ({Role.FACILITY_STAFF, Role.DOCTOR}, lambda p, u, db: followups.complete(
         _pop(p, "follow_up_id"), _note(p), u, db)),
     "MISS_FOLLOW_UP": ({Role.WORKER}, lambda p, u, db: followups.miss(_pop(p, "follow_up_id"), _note(p), u, db)),
     "REROUTE": ({Role.WORKER, Role.COORDINATOR}, lambda p, u, db: referrals.reroute(
