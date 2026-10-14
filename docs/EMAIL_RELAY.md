@@ -29,7 +29,8 @@ function doPost(e) {
 3. Click **Save** (name it "SahyogCare mail").
 4. **Deploy → New deployment** → the gear icon → **Web app**.
    - Execute as: **Me**
-   - Who has access: **Anyone**
+   - Who has access: **Anyone** (not "Anyone with Google account", which makes the server get a
+     Google sign-in page instead of "ok")
 5. **Deploy** → **Authorize access** → choose your Gmail → "Advanced" → "Go to SahyogCare
    mail (unsafe)" → **Allow**. (It is your own script; Google shows this for every new script.)
 6. Copy the **Web app URL** (it ends in `/exec`).
@@ -46,6 +47,13 @@ In Render → SahyogCare-Api → **Environment**, add:
 Save; Render redeploys. From then on, login codes and other emails go through your Gmail.
 Brevo stays as it is but is no longer used while the relay is set. Remove the two keys to go
 back to Brevo.
+
+## Check it
+
+Open the `/exec` URL in a **private / incognito window** (signed out of Google). It must show
+"Script function not found: doGet". If it asks you to sign in or shows a Google page, access is
+not "Anyone": fix it in **Deploy → Manage deployments → Edit (pencil) → Who has access: Anyone →
+Version: New version → Deploy**.
 
 ## Notes
 
