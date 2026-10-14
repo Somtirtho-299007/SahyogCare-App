@@ -17,7 +17,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
-from sqlalchemy import true
+from sqlalchemy import false, true
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -176,6 +176,9 @@ class Patient(Base):
     reminders: Mapped[bool] = mapped_column(Boolean, default=True, server_default=true())
     deceased_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     death_cause: Mapped[str | None] = mapped_column(String(300))
+    # Made their own account on the Patient door. Until an ASHA takes them onto her
+    # register, the area's district office looks after them (created_by = a coordinator).
+    self_registered: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
 
 
 class Encounter(Base):

@@ -242,11 +242,14 @@ class PatientOut(BaseModel):
     reminders: bool = True
     deceased_at: datetime | None = None
     death_cause: str | None = None
+    self_registered: bool = False
 
 
 class PatientCreatedOut(PatientOut):
     # Set when this ASHA already has a patient with the same name and phone.
     possible_duplicate_of: str | None = None
+    # The person had made their own account; it is now on this ASHA's register.
+    took_over_own_account: bool = False
 
 
 class Vitals(BaseModel):
@@ -749,11 +752,28 @@ class PatientChoice(BaseModel):
 
 
 class PatientChoiceOut(BaseModel):
-    """Either signed in, or (a family sharing one phone) the people to choose from."""
+    """Signed in; or (a family sharing one phone) the people to choose from; or (nobody on
+    this number yet) new_account, to make one. signup_token lets a new person on this
+    number make their own account."""
 
     signed_in: PatientTokenOut | None = None
     choose_token: str | None = None
     people: list[PatientChoice] = []
+    new_account: bool = False
+    signup_token: str | None = None
+
+
+class PatientSignupIn(BaseModel):
+    """A patient makes their own account (after proving the mobile number)."""
+
+    signup_token: str
+    name: str = Field(min_length=2, max_length=120)
+    age: int = Field(ge=0, le=120)
+    sex: Literal["F", "M", "O"] | None = None
+    address: str | None = Field(default=None, max_length=300)
+    district: str = Field(min_length=2, max_length=60)
+    language: str = Field(default="bn", max_length=5)
+    consent: bool
 
 
 class MyReferralOut(BaseModel):

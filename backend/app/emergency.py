@@ -126,6 +126,8 @@ def book(db: Session, patient: Patient, body: EmergencyIn) -> EmergencyOut:
                f"SahyogCare sent them to {facility.name}" + (" and asked for its ambulance" if ambulance_requested
                                                              else "; they were told to call 108") + ".")
     for cid in _coordinators(db, asha.district):
+        if cid == asha.id:  # a self-registered patient: the office already got the message above
+            continue
         notify(db, cid, referral, "PATIENT_EMERGENCY",
                f"{referral.code}: night emergency booked by {patient.name} → {facility.name}.")
     messaging.send(phone=patient.phone, email=patient.email, subject="SahyogCare: emergency booked",

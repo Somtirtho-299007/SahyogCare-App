@@ -482,6 +482,8 @@ EMERGENCY_PER_PATIENT_OPEN = 1
 # Patient sign-in requests (code asked for or typed) allowed per IP per minute; a
 # classroom on one Wi-Fi counts as one address.
 PATIENT_LOGINS_PER_MINUTE = 30
+# At most this many people can make their own account on one mobile number (a family).
+SELF_SIGNUPS_PER_PHONE = 6
 # How long a sign-in code the ASHA shows on her phone stays valid.
 PATIENT_SIGN_IN_CODE_VALID_FOR = timedelta(minutes=15)
 
