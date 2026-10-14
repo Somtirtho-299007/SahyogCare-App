@@ -32,10 +32,20 @@ def at_local(hour: int, minute: int, day: date | None = None) -> datetime:
     return datetime(day.year, day.month, day.day, hour, minute, tzinfo=timezone.utc) - IST
 
 
-def patient_headers(client, code: str, last4: str = "3210") -> dict[str, str]:
-    r = client.post(f"{API}/public/patient-login", json={"code": code, "phone_last4": last4})
+def patient_headers(client, patient_id: str, phone: str = "9876543210") -> dict[str, str]:
+    """Sign in as the patient: code to their mobile, then (shared phone) pick them."""
+    code = client.post(f"{API}/public/login/request", json={"phone": phone}).json()["dev_code"]
+    r = client.post(f"{API}/public/login/verify", json={"phone": phone, "code": code})
     assert r.status_code == 200, r.text
-    return {"Authorization": f"Bearer {r.json()['token']}"}
+    body = r.json()
+    if body["signed_in"]:
+        assert body["signed_in"]["patient_id"] == patient_id
+        token = body["signed_in"]["token"]
+    else:
+        r = client.post(f"{API}/public/login/choose", json={"choose_token": body["choose_token"], "patient_id": patient_id})
+        assert r.status_code == 200, r.text
+        token = r.json()["token"]
+    return {"Authorization": f"Bearer {token}"}
 
 
 def run_through_outcome(client, db, asha, staff, doctor, rid):
@@ -197,7 +207,7 @@ def test_patient_photo_is_private_to_people_who_see_the_patient(client, db, auth
     # Another ASHA and an unrelated hospital cannot open it; the patient can.
     assert client.get(f"{API}/photos/{photo_id}", headers=new_user(db, "a4@sahyogcare.test", "WORKER")).status_code == 404
     assert client.get(f"{API}/photos/{photo_id}", headers=auth("FACILITY_STAFF")).status_code == 404
-    assert client.get(f"{API}/photos/{photo_id}", headers=patient_headers(client, p["health_id"])).status_code == 200
+    assert client.get(f"{API}/photos/{photo_id}", headers=patient_headers(client, p["id"])).status_code == 200
     # Not a photo, or not the ASHA's patient: refused.
     fake = "data:image/jpeg;base64," + base64.b64encode(b"hello world, not an image" * 3).decode()
     assert post(client, "/photos", asha, {"data_url": fake, "owner_type": "patient", "owner_id": p["id"]}).status_code == 422
@@ -251,28 +261,10 @@ def test_patient_died_stops_everything(client, db, auth):
 # ---------- the patient's own sign-in ----------
 
 
-def test_patient_signs_in_with_health_id_or_referral_code(client, db, auth):
-    asha = auth("WORKER")
-    ref = make_referral(client, db, asha)
-    pid = ref["patient"]["id"]
-    hid = client.get(f"{API}/patients/{pid}", headers=asha).json()["health_id"]
-    assert client.post(f"{API}/public/patient-login", json={"code": hid, "phone_last4": "0000"}).status_code == 404
-    h = patient_headers(client, hid)
-    record = client.get(f"{API}/public/me/record", headers=h).json()
-    assert record["patient"]["id"] == pid and record["referrals"][0]["code"] == ref["code"]
-    # A referral code works too; a staff login is not a patient login, and vice versa.
-    patient_headers(client, ref["code"])
-    assert client.get(f"{API}/public/me/record", headers=asha).status_code == 401
-    assert client.get(f"{API}/referrals", headers=h).status_code == 401
-
-
-# ---------- night emergency booked by the patient ----------
-
-
 def test_night_emergency_books_the_best_hospital_and_tells_the_asha(client, db, auth):
     asha = auth("WORKER")
     p = make_patient(client, asha, address="Haringhata, near the school")
-    h = patient_headers(client, p["health_id"])
+    h = patient_headers(client, p["id"])
     conditions = {c["condition"]: c for c in client.get(f"{API}/public/emergency-conditions").json()}
     assert conditions["LABOUR"]["service"] == "Maternity"
 
@@ -291,7 +283,7 @@ def test_night_emergency_books_the_best_hospital_and_tells_the_asha(client, db, 
                                                    Notification.kind == "PATIENT_EMERGENCY"))
     assert db.scalar(select(AmbulanceTrip.pickup_note)).startswith("Haringhata")
     # The ASHA gets it by email too (to read when she wakes); the family gets a confirmation.
-    assert any(m["email"] == "asha@sahyogcare.test" for m in messaging.outbox)
+    assert any(m.get("email") == "asha@sahyogcare.test" for m in messaging.outbox)
     assert any(m["phone"] == p["phone"] and "108" in m["text"] for m in messaging.outbox)
 
     # Pressing again does not book a second hospital.
@@ -302,7 +294,7 @@ def test_night_emergency_books_the_best_hospital_and_tells_the_asha(client, db, 
 def test_rejected_patient_emergency_is_rerouted_automatically(client, db, auth):
     asha = auth("WORKER")
     p = make_patient(client, asha)
-    out = client.post(f"{API}/public/emergency", headers=patient_headers(client, p["health_id"]),
+    out = client.post(f"{API}/public/emergency", headers=patient_headers(client, p["id"]),
                       json={"condition": "LABOUR", "latitude": 23.17, "longitude": 88.56}).json()
     first = db.scalar(select(Referral).where(Referral.code == out["referral_code"]))
     staff = headers_of(db, "staff.ranaghat@sahyogcare.test")
@@ -316,7 +308,7 @@ def test_rejected_patient_emergency_is_rerouted_automatically(client, db, auth):
 def test_dead_patient_cannot_book_an_emergency(client, db, auth):
     asha = auth("WORKER")
     p = make_patient(client, asha)
-    h = patient_headers(client, p["health_id"])
+    h = patient_headers(client, p["id"])
     post(client, f"/patients/{p['id']}/deceased", asha, {"cause": "Old age", "died_at": utcnow().isoformat()})
     assert client.post(f"{API}/public/emergency", headers=h, json={"condition": "OTHER"}).status_code == 409
 
@@ -424,8 +416,7 @@ def test_rate_limiter_falls_back_to_memory_without_redis(monkeypatch):
 def test_emergency_when_already_referred_alerts_that_hospital_instead_of_booking_another(client, db, auth):
     asha = auth("WORKER")
     ref = make_referral(client, db, asha)
-    hid = client.get(f"{API}/patients/{ref['patient']['id']}", headers=asha).json()["health_id"]
-    out = client.post(f"{API}/public/emergency", headers=patient_headers(client, hid), json={"condition": "CHEST_PAIN"}).json()
+    out = client.post(f"{API}/public/emergency", headers=patient_headers(client, ref["patient"]["id"]), json={"condition": "CHEST_PAIN"}).json()
     assert out["already_open"] and out["referral_code"] == ref["code"]
     assert db.scalar(select(Notification.id).where(Notification.kind == "PATIENT_EMERGENCY"))
     assert db.scalar(select(Referral.id).where(Referral.origin == "PATIENT_EMERGENCY")) is None

@@ -38,9 +38,11 @@ def test_ambulance_journey(client, db, auth):
     arrived = post(client, f"/referrals/{rid}/arrival", staff).json()
     assert arrived["ambulance"]["status"] == "COMPLETED" and arrived["bed"]["status"] == "OCCUPIED"
 
-    # The patient sees the ambulance on the public status page.
-    pub = client.post(f"{API}/public/referral-status", json={"code": ref["code"], "phone_last4": "3210"}).json()
-    assert pub["ambulance"]["vehicle_number"] == "WB-52-1234"
+    # The patient sees the ambulance in their own account.
+    from test_health_record import patient_headers
+
+    mine = client.get(f"{API}/public/me/referrals", headers=patient_headers(client, ref["patient"]["id"])).json()
+    assert mine[0]["ambulance"]["vehicle_number"] == "WB-52-1234"
 
 
 def test_hospital_without_ambulance_points_to_108(client, db, auth):

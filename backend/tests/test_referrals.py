@@ -326,35 +326,6 @@ def test_offline_scan_of_rejected_referral_is_a_conflict(client, db, auth):
     assert client.get(f"{API}/referrals/{ref['id']}/pass", headers=asha).status_code == 409
 
 
-# ---------- public lookup ----------
-
-
-def test_patient_can_check_status_with_code_and_phone(client, db, auth):
-    ref = make_referral(client, db, auth("WORKER"))
-    post(client, f"/referrals/{ref['id']}/accept", auth("FACILITY_STAFF"))
-
-    r = client.post(f"{API}/public/referral-status", json={"code": ref["code"].lower(), "phone_last4": "3210"})
-    assert r.status_code == 200
-    body = r.json()
-    assert body["status"] == "ACCEPTED" and body["facility_name"] == KALYANI
-    assert [s["status"] for s in body["timeline"]] == ["CREATED", "ACCEPTED"]
-    assert "vitals" not in body and "patient" not in body and body["checklist"]
-
-    wrong_phone = client.post(f"{API}/public/referral-status", json={"code": ref["code"], "phone_last4": "0000"})
-    wrong_code = client.post(f"{API}/public/referral-status", json={"code": "SC-ZZZZZZ", "phone_last4": "3210"})
-    assert wrong_phone.status_code == wrong_code.status_code == 404
-    assert wrong_phone.json()["error"]["message"] == wrong_code.json()["error"]["message"]
-
-
-def test_public_lookup_is_rate_limited(client):
-    from app.rules import PUBLIC_LOOKUPS_PER_MINUTE
-
-    for _ in range(PUBLIC_LOOKUPS_PER_MINUTE):
-        client.post(f"{API}/public/referral-status", json={"code": "SC-ZZZZZZ", "phone_last4": "0000"})
-    r = client.post(f"{API}/public/referral-status", json={"code": "SC-ZZZZZZ", "phone_last4": "0000"})
-    assert r.status_code == 429 and r.json()["error"]["code"] == "RATE_LIMITED"
-
-
 # ---------- notifications ----------
 
 

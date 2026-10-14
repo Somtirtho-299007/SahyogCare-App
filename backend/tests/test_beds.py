@@ -283,14 +283,17 @@ def test_reroute_to_a_full_hospital_offers_others(client, db, auth):
     assert client.get(f"{API}/referrals/{old['id']}", headers=asha).json()["bed"]["status"] == "HELD"
 
 
-def test_patient_lookup_follows_the_reroute(client, db, auth):
+def test_patient_account_shows_the_reroute(client, db, auth):
+    from test_health_record import patient_headers
+
     asha = auth("WORKER")
     old = make_referral(client, db, asha)
     new = post(client, f"/referrals/{old['id']}/reroute", asha,
                {"destination_facility_id": facility_id(db, NADIA)}).json()
-    r = client.post(f"{API}/public/referral-status", json={"code": old["code"], "phone_last4": "3210"}).json()
-    assert r["status"] == "REROUTED" and r["rerouted_to_code"] == new["code"]
-    assert r["rerouted_to_facility"] == NADIA and r["emergency_number"] == "108"
+    mine = client.get(f"{API}/public/me/referrals", headers=patient_headers(client, old["patient"]["id"])).json()
+    assert [r["code"] for r in mine] == [new["code"], old["code"]]  # newest first, both under one person
+    assert mine[0]["is_open"] and mine[0]["facility_name"] == NADIA
+    assert mine[1]["status"] == "REROUTED" and not mine[1]["is_open"] and mine[1]["rerouted_to_facility"] == NADIA
 
 
 def test_reroute_works_offline(client, db, auth):
