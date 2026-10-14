@@ -10,6 +10,7 @@ In order of preference:
 import json
 import logging
 import smtplib
+import urllib.error
 import urllib.request
 from email.message import EmailMessage
 from email.utils import parseaddr
@@ -47,9 +48,15 @@ def _send_brevo(to: str, code: str) -> None:
         headers={"api-key": settings.brevo_api_key, "content-type": "application/json", "accept": "application/json"},
         method="POST",
     )
-    with urllib.request.urlopen(request, timeout=15) as response:  # raises on 4xx/5xx
-        if response.status >= 300:
-            raise RuntimeError(f"Brevo answered {response.status}")
+    try:
+        with urllib.request.urlopen(request, timeout=15) as response:  # raises on 4xx/5xx
+            if response.status >= 300:
+                raise RuntimeError(f"Brevo answered {response.status}")
+    except urllib.error.HTTPError as exc:
+        # Keep Brevo's own reason in the log, e.g. "unrecognised IP address" or "sender not valid".
+        reason = exc.read()[:400].decode(errors="replace")
+        log.error("Brevo refused the login email (%s): %s", exc.code, reason)
+        raise RuntimeError(f"Brevo answered {exc.code}: {reason}") from exc
 
 
 def _send_smtp(to: str, code: str) -> None:
