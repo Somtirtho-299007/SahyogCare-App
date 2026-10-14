@@ -21,12 +21,12 @@ SahyogCare has **no public sign-up into a role**. Every ASHA, hospital staff mem
 
 **Please log in to the Coordinator (District Office) dashboard first, then open the ASHA and Medical Team dashboards.**
 
-1. Open the live site → choose **District office** → enter your own email → type the 6-digit code from your inbox (check Spam).
-2. Pick the area **Naihati** and enter the **office passphrase** (shared with the judges in the submission form; it is never written in the code).
-3. The **Naihati coordinator dashboard** opens.
-4. In another browser (or a private window), sign in as **Health worker** with a **different email** and ask for the role **ASHA** in Naihati.
-5. Back on the coordinator dashboard, approve the request under **"Who wants to join"**.
-6. The ASHA's screen shows a **personal code** once. Write it down: every later login needs the email code **and** this personal code.
+1. Open the live site → choose **District office** → enter your email → type the 6-digit code from your inbox (check Spam).
+2. The app asks for your name, the area and the **office passphrase**: choose **Naihati** and enter the passphrase given in our **submission form** (it is kept out of this public repository on purpose). It is asked **only once**; the **Naihati coordinator dashboard** then opens.
+3. The first time, the coordinator also sees a **personal code** (8 characters, `XXXX-XXXX`). Write it down: every later login is the email code **plus** this personal code.
+4. In another browser (or a private window), choose **Health worker**, sign in with a **different email**, fill in **Ask to join** (name, area **Naihati**, role **ASHA**, optional photo) and send it.
+5. Back on the coordinator dashboard, press **Approve** under **"Who wants to join"**.
+6. The ASHA's screen opens and shows her own personal code once. She writes it down too.
 7. Repeat steps 4 to 6 for **Hospital staff** and **Doctor**, choosing **Naihati State General Hospital**.
 
 **Tip: one Gmail is enough.** Gmail delivers `yourname+asha@gmail.com`, `yourname+staff@gmail.com` and `yourname+doctor@gmail.com` to the same inbox, but SahyogCare treats each one as a separate person. Use one browser window per role, because one browser keeps one login at a time.
@@ -221,7 +221,7 @@ All routes start with `/api/v1`. Interactive docs: `/docs` on the backend.
 | POST | `/auth/code` | Public + code token | Personal code step → tokens |
 | POST | `/auth/refresh` | Refresh token | New access token |
 | GET | `/me` | Any user | Current user (and new personal code once) |
-| POST | `/office/join` | Any user | Become an area's coordinator with the office passphrase |
+| POST | `/office/join` | Any user | First entry as an area's coordinator with the office passphrase (not needed for listed officer emails) |
 | POST | `/access-requests` | Any user | Ask for a role (ASHA, staff, doctor) in an area |
 | GET | `/access-requests` | Coordinator | Pending requests in my area |
 | POST | `/access-requests/{id}/approve` · `/reject` | Coordinator | Decide a request |
@@ -258,34 +258,35 @@ Every error returns `{"error": {"code", "message", "details", "request_id"}}` wi
 Use one browser window per person. Each step feeds the next.
 
 ### 1. District Office (Coordinator, Naihati): **do this first**
-1. **District office** → email → code → **Naihati** → office passphrase → coordinator dashboard.
+1. **District office** → email → 6-digit code → area **Naihati** + office passphrase (from the submission form, asked only once) → coordinator dashboard. Note the personal code shown the first time.
 2. Hospitals: only Naihati hospitals appear. Open **Manage** and set the General ward to 20 total, 15 occupied: it shows **5 free**. Add the **Emergency** service and tick **has ambulance**.
 3. Keep this window open to approve people in the next steps.
 
 ### 2. ASHA
-1. New window → **Health worker** → a second email → code → ask for **ASHA** in **Naihati** (name and photo).
-2. Coordinator window: **Approve**. The ASHA screen shows the **personal code** once; note it down.
+1. New window → **Health worker** → a second email → code → **Ask to join** as **ASHA** in **Naihati** (name, optional photo). The screen says the request is waiting.
+2. Coordinator window: **Approve** under "Who wants to join". The ASHA screen opens by itself within half a minute (or press **Check again**) and shows her **personal code** once; note it down.
 3. Register a patient (name, age, mobile, consent) and record vitals; out-of-range readings are flagged.
-4. Choose a service: hospitals appear **ranked with reasons**. Pick one → **Send referral**. You get a code (`SC-XXXXXX`), a **QR pass** and **"Bed held"**.
-5. **Request ambulance** with a pickup note; the **Call 108** box is always visible. **Open eSanjeevani** gives the advice hand-off.
+4. Choose a service: hospitals appear **ranked with reasons**. Pick one → **Create referral →**. You get a code (`SC-XXXXXX`), a **QR pass** and **"Bed held for you"**.
+5. **Ask hospital for ambulance** with a pickup note; **Call 108 (ambulance)** is always visible. The eSanjeevani card opens the government teleconsultation site, and **Copy patient summary for the doctor** copies the case.
 
 ### 3. Medical Team: Hospital staff
-1. New window → **Health worker** → third email → ask for **Hospital staff** at **Naihati State General Hospital** → coordinator approves → note the personal code.
+1. New window → **Health worker** → third email → **Ask to join** as **Hospital staff** at **Naihati State General Hospital** → coordinator approves → note the personal code.
 2. The referral is in the queue, Emergency first, with vitals and "Bed held". The header shows the bed panel.
-3. **Accept**, then **Send ambulance** (ETA, vehicle number, driver phone) → **Picked up** → **Record arrival**, or scan or paste the QR pass. The bed changes from held to occupied.
+3. **Accept**, then **Send ambulance** (ETA, vehicle number, driver phone) → **Patient picked up** → **Record arrival**, or scan or paste the QR pass. The bed changes from held to occupied.
 4. Reject a second test referral with **"No beds available"**: the ASHA gets an alert and can re-route.
 
 ### 4. Medical Team: Doctor
-1. Sign out in the staff window → sign in with `yourname+doctor@gmail.com` → ask for **Doctor** at the same hospital → coordinator approves.
+1. Sign out in the staff window → sign in with `yourname+doctor@gmail.com` → **Ask to join** as **Doctor** at the same hospital → coordinator approves.
 2. **Mark consulted** → **Record outcome** with a follow-up in 7 days.
 
 ### 5. ASHA again
 1. Alerts show every step: accepted, ambulance, arrived, outcome.
-2. **Follow-up due** appears. Send the patient for the checkup; the hospital confirms it and the referral is **CLOSED**.
-3. On the rejected referral: **Choose another hospital** → it moves with a new code; the old bed hold and ambulance are cancelled.
+2. **Follow-up checkup due** appears with its date. Press **Patient sent for checkup** (the hospital is told to expect the patient) or **Couldn't go** (marked missed, the district office sees it).
+3. Staff or doctor window: press **Checkup done**. Only the receiving hospital can confirm it, and the referral becomes **CLOSED**.
+4. On the rejected referral: **Choose another hospital** → it moves with a new code; the old bed hold and ambulance are cancelled.
 
 ### 6. Patient
-1. **Patient** → the mobile number the ASHA registered → code. Without SMS, the ASHA shows a sign-in code from the patient's record.
+1. **Patient** → the mobile number the ASHA registered → code. Without SMS, the ASHA opens the patient's record and presses **Sign-in code for the patient** (works once, for 15 minutes).
 2. The patient sees every referral, the journey, ambulance details and their care chart. **Call 108** and the emergency button are visible.
 
 ### 7. Coordinator again
@@ -346,7 +347,7 @@ Backend settings live in `backend/.env` (copy from [`backend/.env.example`](./ba
 | `SAHYOG_ENVIRONMENT` | `development` or `production` (production hides on-screen codes) | Set by you |
 | `SAHYOG_CORS_ORIGINS` | Frontend addresses allowed to call the API | Your frontend URL |
 | `SAHYOG_DISTRICTS` | Areas served, e.g. `Nadia,Naihati` | Set by you |
-| `SAHYOG_COORDINATOR_EMAILS` | First coordinator(s), `email:Area,...` | Set by you |
+| `SAHYOG_COORDINATOR_EMAILS` | District officers who log in without a passphrase, `email:Area,...` | Set by you |
 | `SAHYOG_DEMO_DATA` | `false` in production: no demo hospitals or test accounts | Set by you |
 | `SAHYOG_BREVO_API_KEY` | Sends login codes by email | brevo.com → SMTP & API → API keys |
 | `SAHYOG_SMTP_FROM` | Sender shown on emails; must be a verified sender in Brevo | Brevo → Senders |
@@ -356,7 +357,7 @@ Backend settings live in `backend/.env` (copy from [`backend/.env.example`](./ba
 
 Frontend: `VITE_API_URL` (build time) points the deployed site at the API, e.g. `https://sahyogcare-api.onrender.com/api/v1`. Locally it is not needed.
 
-Office passphrases are **not** environment variables. Only salted hashes are stored in `backend/app/offices.py`, and the passphrases are given privately to each district office.
+Office passphrases are **not** environment variables. Only salted hashes are stored in `backend/app/offices.py`, and the passphrases are given privately to each district office. They are only a fallback: a listed officer email never needs one.
 
 **Deploy:** Render → **New → Blueprint** → this repo creates the API and PostgreSQL from [`render.yaml`](./render.yaml). The frontend is a Render **Static Site**: build `npm install && npm run build`, publish `dist`, set `VITE_API_URL`.
 
@@ -369,10 +370,11 @@ Office passphrases are **not** environment variables. Only salted hashes are sto
   - At most 30 code requests per minute per IP.
   - Unknown emails get the same answer as registered ones, so the API never reveals who has an account.
 - **Roles and approval:** the first login creates an account with no access.
-  - The person asks for a role in an area, and that area's coordinator approves or rejects it.
-  - Coordinators enter with the office passphrase (or are listed in `SAHYOG_COORDINATOR_EMAILS`).
-  - Wrong passphrases give one generic answer and are limited to 5 tries per 10 minutes.
-- **Personal code:** after approval each person gets a permanent `XXXX-XXXX` code, shown once and stored only as a keyed hash. Every later login needs the email code **and** this code.
+  - ASHA, hospital staff and doctors press **Ask to join**; that area's coordinator approves or rejects the request.
+  - **District officers need no passphrase if their email is listed** in `SAHYOG_COORDINATOR_EMAILS`: the account is created as coordinator when the server starts, and they go straight to the dashboard.
+  - An officer whose email is not listed enters **once** with the area's office passphrase. Wrong passphrases give one generic answer and are limited to 5 tries per 10 minutes, and other coordinators of the area are notified.
+  - After that, officers log in like everyone else; the passphrase is never asked again.
+- **Personal code:** after approval (or the officer's first entry) each person gets a permanent 8-character `XXXX-XXXX` code, shown once and stored only as a keyed hash. Every later login needs the email code **and** this code. The district office can reset a forgotten code.
 - **Sessions:** JWT access token (15 minutes) and refresh token (7 days). The frontend renews the access token silently; when renewal fails, it signs out.
 - **Protected data:** checked on the server, not just hidden in the UI. Every route checks the role (`require_roles`) and the scope (own patients, own hospital, own area). Out-of-scope records answer 404.
 - **Patients:** sign in with their registered mobile (SMS code, or a code the ASHA shows) and see only their own record.
