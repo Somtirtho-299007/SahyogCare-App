@@ -14,7 +14,7 @@ from app.db import get_db
 from app.errors import ApiError
 from app.models import AuditLog, Encounter, Medicine, Patient, User
 from app.records import encounter_out, patient_record, record_death, register_rows, unique_health_id, vital_ranges
-from app.rules import Role, triage_suggestion, validate_vitals
+from app.rules import PATIENT_SIGN_IN_CODE_VALID_FOR, Role, triage_suggestion, validate_vitals
 from app.schemas import (
     DeceasedIn,
     EncounterIn,
@@ -23,6 +23,7 @@ from app.schemas import (
     PatientIn,
     PatientOut,
     PatientRecordOut,
+    PatientSignInCodeOut,
     PatientUpdateIn,
     RegisterRowOut,
     VitalRangeOut,
@@ -176,3 +177,21 @@ def mark_deceased(patient_id: str, body: DeceasedIn,
     record_death(db, patient, user, body.cause, body.died_at)
     commit(db)
     return patient
+
+
+@router.post("/{patient_id}/sign-in-code", response_model=PatientSignInCodeOut)
+def patient_sign_in_code(patient_id: str,
+                         user: User = Depends(require_roles(Role.WORKER, Role.DOCTOR, Role.FACILITY_STAFF, Role.COORDINATOR)),
+                         db: Session = Depends(get_db)) -> PatientSignInCodeOut:
+    """A one-time code for the patient's own account, shown on the ASHA's phone.
+
+    For places without the SMS service: the patient types their mobile number and this
+    code on their own phone. Valid 15 minutes; any older code for that number stops working.
+    """
+    from app.routers.public import issue_patient_code, patient_key
+
+    patient = get_patient_for(db, user, patient_id)
+    code = issue_patient_code(db, patient_key(patient.phone, None), PATIENT_SIGN_IN_CODE_VALID_FOR)
+    db.add(AuditLog(actor_id=user.id, action="PATIENT_SIGN_IN_CODE", target_type="patient", target_id=patient.id))
+    db.commit()
+    return PatientSignInCodeOut(code=code, phone=patient.phone, expires_at=utcnow() + PATIENT_SIGN_IN_CODE_VALID_FOR)
