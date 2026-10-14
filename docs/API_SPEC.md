@@ -132,7 +132,8 @@ Creating a referral holds a bed in the ward the service needs (`bed` in the resp
 | Method | Route | Role | Purpose |
 |---|---|---|---|
 | POST | `/public/login/request` | Public, rate-limited | `{"phone": "9876543210"}` or `{"email": ...}` → `{"channel": "sms" \| "email" \| "asha"}`; sends a 6-digit code if anyone is registered there |
-| POST | `/public/login/verify` | Public, rate-limited | `{phone \| email, "code"}` → `{"signed_in": {token, patient_id, name, ...}}`, or for a shared phone `{"choose_token", "people": [{id, name, age, sex}]}` |
+| POST | `/public/login/verify` | Public, rate-limited | `{phone \| email, "code"}` → `{"signed_in": {token, ...}}`, or for a shared phone `{"choose_token", "people": [...]}`, or for a new number `{"new_account": true}`; `signup_token` is included so a new person can make an account |
+| POST | `/public/login/signup` | Public (needs `signup_token` from verify) | `{"signup_token", "name", "age", "sex", "address", "district", "consent": true}` → a new patient account and its token |
 | POST | `/public/login/choose` | Public (needs `choose_token`) | `{"choose_token", "patient_id"}` → the patient's token |
 | POST | `/patients/{id}/sign-in-code` | ASHA / staff / coordinator with access | One-time code for the patient to type (no SMS service), valid 15 minutes |
 | GET | `/public/me/referrals` | Patient token | Every referral of the patient, newest first: status, timeline, hospital and phone, ambulance, follow-up date |
