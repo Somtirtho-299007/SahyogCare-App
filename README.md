@@ -53,7 +53,7 @@ SahyogCare is intended to coordinate existing healthcare workflows rather than r
 - **Patient intake and triage** — Allows ASHA/ANM workers to capture patient information and initial triage details.
 - **Facility-oriented referral flow** — Connects a patient case with the intended healthcare facility during the referral process.
 - **Case status visibility** — Uses clear referral states and journey stages to communicate the current position of a case.
-- **Multilingual interface** — Provides a centralized language-selection sidebar with multiple Indian language options.
+- **Multilingual interface** — Every screen in English, Bengali, Hindi, Marathi, Gujarati, Tamil and Telugu; pick the language on the start screen or from the 文 button.
 - **Responsive design** — Adapts the core workflow for desktop and mobile screen sizes.
 - **Patient checklist** — Presents relevant actions and information to help patients understand their current journey.
 - **Interactive frontend workflow** — User interactions update the interface without requiring a backend for the current prototype.
@@ -145,7 +145,7 @@ Open the URL Vite prints (usually `http://localhost:5173`). Requests to `/api` a
 | ASHA / ANM | `asha@sahyogcare.test` | Register patients, create referrals, see alerts |
 | Medical Team (staff) | `staff@sahyogcare.test` | Accept / reject, record arrival, scan referral passes |
 | Medical Team (doctor) | `doctor@sahyogcare.test` | Record consultation and outcome |
-| Patient | no login | Check status with referral code + last 4 phone digits |
+| Patient | their registered mobile + code | Their own account: every referral, medicines, history, emergency button |
 
 In development the 6-digit login code is shown on screen. The demo facility for staff and doctor is Kalyani District Hospital.
 
