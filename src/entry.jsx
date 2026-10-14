@@ -10,6 +10,7 @@ import {
   markCodeSeen,
   patientChoose,
   patientRequestCode,
+  patientSignup,
   patientVerify,
   qs,
   refreshMe,
@@ -60,6 +61,9 @@ export function EntryScreen({ onSignIn, onTour }) {
   const [channel, setChannel] = useState(""); // patients: sms | email | asha
   const [people, setPeople] = useState([]); // patients: a family on one phone
   const [chooseToken, setChooseToken] = useState("");
+  const [signupToken, setSignupToken] = useState("");
+  const [me, setMe] = useState({ name: "", age: "", sex: "", address: "", district: "", consent: false });
+  const [areas, setAreas] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   useEffect(() => {
@@ -104,7 +108,9 @@ export function EntryScreen({ onSignIn, onTour }) {
     try {
       if (patientDoor) {
         const p = await patientVerify(who.trim(), otp);
+        setSignupToken(p.signupToken || "");
         if (p.patient) return onSignIn({ screen: "patient", user: null });
+        if (p.newAccount) return startSignup();
         setPeople(p.people);
         setChooseToken(p.chooseToken);
         return go("pick");
@@ -132,6 +138,38 @@ export function EntryScreen({ onSignIn, onTour }) {
         setError(t("codeStepExpired"));
         go("id");
       } else setError(errorText(t, e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  // Nobody on this number yet (or someone new on a family phone): make an account.
+  const startSignup = () => {
+    setMe({ name: "", age: "", sex: "", address: "", district: "", consent: false });
+    if (areas === null)
+      getDistricts()
+        .then(setAreas)
+        .catch(() => setAreas([]));
+    go("signup");
+  };
+  const signupValid = me.name.trim().length >= 2 && me.age !== "" && Number(me.age) <= 120 && me.district && me.consent;
+  const createAccount = async () => {
+    if (!signupValid || busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      await patientSignup(signupToken, {
+        name: me.name.trim(),
+        age: Number(me.age),
+        sex: me.sex || null,
+        address: me.address.trim() || null,
+        district: me.district,
+        language: ["bn", "hi", "en"].includes(language) ? language : "bn",
+        consent: true,
+      });
+      onSignIn({ screen: "patient", user: null });
+    } catch (e) {
+      setError(errorText(t, e));
+      if (e.code === "AUTH_REQUIRED") go("id");
     } finally {
       setBusy(false);
     }
@@ -278,6 +316,49 @@ export function EntryScreen({ onSignIn, onTour }) {
                 </span>
               </button>
             ))}
+            {signupToken && (
+              <button className="link-btn" onClick={startSignup}>
+                ＋ {t("someoneNewOnPhone")}
+              </button>
+            )}
+          </div>
+        )}
+
+        {step === "signup" && (
+          <div className="reveal join-form">
+            <p className="entry-step">{doorName}</p>
+            <h1 className="entry-title">{t("createAccountTitle")}</h1>
+            <p className="muted">{t("createAccountHelp")}</p>
+            <label>{t("yourName")}</label>
+            <input id="signup-name" className="big-input" value={me.name} onChange={(e) => setMe({ ...me, name: e.target.value })} placeholder={t("fullName")} />
+            <label>{t("age")}</label>
+            <input className="big-input" inputMode="numeric" value={me.age} onChange={(e) => setMe({ ...me, age: e.target.value.replace(/\D/g, "").slice(0, 3) })} />
+            <label>{t("sex")}</label>
+            <div className="choice-row">
+              {["F", "M", "O"].map((x) => (
+                <button key={x} className={me.sex === x ? "choice on" : "choice"} onClick={() => setMe({ ...me, sex: x })}>
+                  {t(`sex_${x}`)}
+                </button>
+              ))}
+            </div>
+            <label>{t("whereYouLive")}</label>
+            {areas === null && <p className="muted">{t("loading")}</p>}
+            <div className="choice-row">
+              {(areas || []).map((d) => (
+                <button key={d} className={me.district === d ? "choice on" : "choice"} onClick={() => setMe({ ...me, district: d })}>
+                  {d}
+                </button>
+              ))}
+            </div>
+            <label>{t("villageAddress")}</label>
+            <input className="big-input" value={me.address} onChange={(e) => setMe({ ...me, address: e.target.value })} placeholder={t("addressPlaceholder")} />
+            <label className="check-line">
+              <input type="checkbox" checked={me.consent} onChange={(e) => setMe({ ...me, consent: e.target.checked })} />
+              <span>{t("consentSelf")}</span>
+            </label>
+            <button className="primary-btn big-btn" onClick={createAccount} disabled={!signupValid || busy}>
+              {busy ? t("loading") : t("createAccount")}
+            </button>
           </div>
         )}
 

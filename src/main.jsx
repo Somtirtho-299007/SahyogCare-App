@@ -142,6 +142,7 @@ function App() {
       .catch(() => {});
   }, [userId]);
   const signIn = (s) => {
+    window.scrollTo(0, 0); // open the dashboard at its top, not where the sign-in form was scrolled
     setSession(s);
     if (s.user && s.user.approved !== false) setToast(`${t(s.screen)} · ${s.user.name}`);
   };
@@ -1460,6 +1461,7 @@ function PatientHome({ toast, onSignOut }) {
           <small>{t("emergencyNowSub")}</small>
         </button>
       )}
+      {record?.patient.self_registered && <p className="notice good self-note">{t("selfRegNote")}</p>}
       {emergency && createPortal(<EmergencyPanel onClose={() => (setEmergency(false), load())} />, document.body)}
       <div className="view-tabs" role="tablist">
         <button role="tab" aria-selected={tab === "referrals"} className={tab === "referrals" ? "tab active" : "tab"} onClick={() => setTab("referrals")}>

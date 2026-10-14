@@ -151,13 +151,24 @@ export const patientLogout = () => removeLS(PATIENT_KEY);
 export const patientRequestCode = (who) => send("POST", "/public/login/request", identity(who));
 
 // Returns { patient } when signed in, or { people, chooseToken } when a family shares the phone.
+// Returns { patient } (signed in), { people, chooseToken } (a family shares the phone) or
+// { newAccount: true } (nobody on this number yet). signupToken lets a new person make an account.
 export async function patientVerify(who, code) {
   const r = await send("POST", "/public/login/verify", { ...identity(who), code });
+  const signupToken = r.signup_token || null;
   if (r.signed_in) {
     writeLS(PATIENT_KEY, r.signed_in.token);
-    return { patient: r.signed_in };
+    return { patient: r.signed_in, signupToken };
   }
-  return { people: r.people, chooseToken: r.choose_token };
+  if (r.new_account) return { newAccount: true, signupToken };
+  return { people: r.people, chooseToken: r.choose_token, signupToken };
+}
+
+// A patient makes their own account on their proven mobile number.
+export async function patientSignup(signupToken, form) {
+  const t = await send("POST", "/public/login/signup", { signup_token: signupToken, ...form });
+  writeLS(PATIENT_KEY, t.token);
+  return { patient: t };
 }
 
 export async function patientChoose(chooseToken, patientId) {

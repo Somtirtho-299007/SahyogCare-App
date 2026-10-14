@@ -549,3 +549,6 @@ select.big-input{appearance:auto}
 .past-referrals{margin-top:10px}
 .asha-code-note{display:flex;flex-direction:column;gap:4px;margin:0 0 14px;padding:12px 14px;border-radius:14px;background:#fdf0dc;color:#7a4e0c;font-size:15px}
 @media (max-width:420px){.my-ref .journey{grid-template-columns:repeat(4,1fr)}}
+.check-line{display:flex!important;align-items:flex-start;gap:10px;margin:8px 0 14px!important;font-weight:600!important}
+.check-line input{width:22px;height:22px;flex:none;margin-top:2px}
+.self-note{margin-bottom:14px}
