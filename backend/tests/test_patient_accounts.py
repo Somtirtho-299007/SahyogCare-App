@@ -1,6 +1,8 @@
 """Patients have their own account: mobile (or email) + one-time code, then everything of
 theirs, and nothing of anyone else's. A referral code alone opens nothing."""
 
+from sqlalchemy import select
+
 from test_health_record import patient_headers
 from test_referrals import API, KALYANI, facility_id, make_encounter, make_patient, make_referral, post
 
@@ -44,10 +46,10 @@ def test_a_family_sharing_one_phone_picks_who_they_are(client, db, auth):
     assert me["patient"]["id"] == son["id"] != mother["id"]
 
 
-def test_wrong_codes_lock_and_unknown_numbers_learn_nothing(client, db, auth):
+def test_wrong_codes_lock(client, db, auth):
     make_patient(client, auth("WORKER"))
-    # Unknown number: same answer, no code made.
-    assert ask(client, "9000000001") == {"channel": "sms", "dev_code": None}
+    # Any number gets a code (new patients make their own account with it).
+    assert ask(client, "9000000001")["dev_code"]
     sent = ask(client)
     for _ in range(4):
         r = client.post(f"{API}/public/login/verify", json={"phone": PHONE, "code": "000000"})
@@ -146,3 +148,82 @@ def test_sms_refused_by_the_service_falls_back_to_the_asha(client, db, auth, mon
                         lambda *a, **k: b'{"return": false, "message": "Complete a transaction first"}')
     assert ask(client) == {"channel": "asha", "dev_code": None}
     assert client.get(f"{API}/health").json()["sms"] == "on"
+
+
+# ---------- patients make their own account ----------
+
+
+def verify(client, phone=PHONE):
+    code = ask(client, phone)["dev_code"]
+    r = client.post(f"{API}/public/login/verify", json={"phone": phone, "code": code})
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def signup(client, token, **extra):
+    body = {"signup_token": token, "name": "Mina Das", "age": 30, "sex": "F", "address": "Kalyani B-block",
+            "district": "Nadia", "consent": True, **extra}
+    return client.post(f"{API}/public/login/signup", json=body)
+
+
+def test_a_new_patient_makes_their_own_account(client, db, auth):
+    from app.models import Notification
+
+    office = auth("COORDINATOR")
+    v = verify(client, "9000011111")
+    assert v["new_account"] and v["signup_token"] and v["signed_in"] is None
+    assert signup(client, v["signup_token"], consent=False).status_code == 422
+    assert signup(client, v["signup_token"], district="Nowhere").status_code == 422
+    r = signup(client, v["signup_token"])
+    assert r.status_code == 201, r.text
+    h = {"Authorization": f"Bearer {r.json()['token']}"}
+    me = client.get(f"{API}/public/me/record", headers=h).json()
+    assert me["patient"]["name"] == "Mina Das" and me["patient"]["self_registered"] and me["patient"]["phone"] == "9000011111"
+    assert client.get(f"{API}/public/me/referrals", headers=h).json() == []
+    assert db.scalar(select(Notification.id).where(Notification.kind == "PATIENT_SELF_SIGNUP"))
+    # The district office can see them; signing in again goes straight in.
+    assert client.get(f"{API}/patients/{me['patient']['id']}", headers=office).status_code == 200
+    assert verify(client, "9000011111")["signed_in"]["patient_id"] == me["patient"]["id"]
+
+
+def test_someone_new_on_a_family_phone(client, db, auth):
+    auth("COORDINATOR")
+    mother = make_patient(client, auth("WORKER"), name="Mina Das")
+    v = verify(client)
+    assert v["signed_in"]["patient_id"] == mother["id"] and v["signup_token"]
+    r = signup(client, v["signup_token"], name="Bablu Das", age=6, sex="M")
+    assert r.status_code == 201
+    v2 = client.post(f"{API}/public/login/verify", json={"phone": PHONE, "code": "000000"})  # old code used
+    assert v2.status_code == 400
+    # Same name again just signs that person in (no duplicate).
+    again = signup(client, v["signup_token"], name="bablu  das", age=6)
+    assert again.json()["patient_id"] == r.json()["patient_id"]
+
+
+def test_asha_takes_a_self_registered_patient_onto_her_register(client, db, auth):
+    auth("COORDINATOR")
+    v = verify(client, "9000022222")
+    own = signup(client, v["signup_token"], name="Rupa Sen").json()
+    asha = auth("WORKER")
+    p = client.post(f"{API}/patients", headers=asha, json={"name": "Rupa Sen", "age": 31, "sex": "F",
+                                                           "phone": "9000022222", "consent_given": True}).json()
+    assert p["id"] == own["patient_id"] and p["took_over_own_account"] and not p["self_registered"] and p["age"] == 31
+    rows = client.get(f"{API}/patients/register", headers=asha).json()
+    assert [r["patient"]["id"] for r in rows] == [own["patient_id"]]
+    # A referral by the ASHA now shows in the patient's own account.
+    ref_e = make_encounter(client, asha, p["id"])
+    ref = post(client, "/referrals", asha, {"patient_id": p["id"], "encounter_id": ref_e["id"],
+                                            "destination_facility_id": facility_id(db, KALYANI),
+                                            "requested_service": "General Medicine"}).json()
+    mine = client.get(f"{API}/public/me/referrals", headers={"Authorization": f"Bearer {own['token']}"}).json()
+    assert [r["code"] for r in mine] == [ref["code"]]
+
+
+def test_self_registered_patient_can_book_a_night_emergency(client, db, auth):
+    auth("COORDINATOR")
+    v = verify(client, "9000033333")
+    t = signup(client, v["signup_token"]).json()["token"]
+    out = client.post(f"{API}/public/emergency", headers={"Authorization": f"Bearer {t}"},
+                      json={"condition": "LABOUR", "latitude": 23.17, "longitude": 88.56})
+    assert out.status_code == 201, out.text
+    assert out.json()["hospital_name"]
