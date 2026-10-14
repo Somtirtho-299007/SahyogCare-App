@@ -13,6 +13,7 @@ One mobile is often shared by a family: after the code, the patient picks who th
 from the people registered on that number.
 """
 
+import logging
 from datetime import timedelta
 
 import jwt
@@ -56,6 +57,7 @@ from app.timeutil import as_utc, utcnow
 from app.workflow import commit, rerouted_to
 
 router = APIRouter(prefix="/public", tags=["public"])
+log = logging.getLogger("sahyogcare.public")
 patient_login_limiter = RateLimiter(PATIENT_LOGINS_PER_MINUTE)
 
 
@@ -106,7 +108,8 @@ def patient_code_request(body: PatientCodeRequestIn, request: Request, db: Sessi
     """
     patient_login_limiter.check(request.client.host if request.client else "unknown")
     phone, email = _identity(body)
-    channel = "email" if email else ("sms" if sms_enabled() or settings.is_development or settings.log_login_codes else "asha")
+    # Without a working SMS service the patient asks their ASHA, who shows a code on her phone.
+    channel = "email" if email else ("sms" if sms_enabled() or settings.is_development else "asha")
     if channel == "asha":
         return PatientCodeRequestOut(channel=channel)
     key = patient_key(phone, email)
@@ -126,6 +129,10 @@ def patient_code_request(body: PatientCodeRequestIn, request: Request, db: Sessi
             send_login_code(email, code)
     except Exception as exc:
         db.rollback()
+        if phone:
+            # The SMS service is down or refused (e.g. no balance): fall back to the ASHA's code.
+            log.exception("Patient login SMS could not be sent")
+            return PatientCodeRequestOut(channel="asha")
         raise ApiError(503, "EMAIL_FAILED", "Could not send the code. Please try again.") from exc
     db.commit()
     return PatientCodeRequestOut(channel=channel, dev_code=code if settings.is_development else None)

@@ -9,6 +9,8 @@ which waits for the coordinator's approval of the role the person asks for
 (see app/routers/access.py). Switched-off accounts get no code.
 """
 
+import logging
+
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
@@ -38,6 +40,7 @@ from app.security import (
 from app.timeutil import as_utc, utcnow
 
 router = APIRouter(tags=["auth"])
+log = logging.getLogger("sahyogcare.auth")
 
 GENERIC_SENT = "A login code has been sent to this email."
 GENERIC_SENT_SMS = "A login code has been sent by SMS to this number."
@@ -144,6 +147,9 @@ def request_code(body: OtpRequestIn, request: Request, db: Session = Depends(get
             send_login_code(email, code)
     except Exception as exc:
         db.rollback()
+        if phone:
+            log.exception("Login SMS could not be sent")
+            raise ApiError(503, "SMS_FAILED", "The SMS could not be sent. Please sign in with your email.") from exc
         raise ApiError(503, "EMAIL_FAILED", "Could not send the login code. Please try again.") from exc
     db.commit()
 

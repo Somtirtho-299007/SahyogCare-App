@@ -16,4 +16,9 @@ def health(db: Session = Depends(get_db)) -> HealthOut:
         db.execute(text("SELECT 1"))
     except Exception as exc:  # database down or misconfigured
         raise ApiError(503, "DATABASE_UNAVAILABLE", "The database is not reachable.") from exc
-    return HealthOut(status="ok", database="ok", version=__version__)
+    from app.messaging import check_sms, email_enabled
+
+    # Which outside services are set up (never the keys): helps find why an SMS or email
+    # did not arrive. "log-only" means codes go to the server log, not to phones.
+    return HealthOut(status="ok", database="ok", version=__version__, sms=check_sms(),
+                     email="on" if email_enabled() else "off")
