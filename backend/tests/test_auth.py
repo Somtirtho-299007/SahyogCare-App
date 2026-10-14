@@ -166,3 +166,38 @@ def test_role_check(client, auth, role, expected):
 def test_bad_input_is_rejected(client):
     assert client.post(f"{API}/auth/otp/request", json={"email": "not-an-email"}).status_code == 422
     assert client.post(f"{API}/auth/otp/verify", json={"email": ASHA, "code": "12ab56"}).status_code == 422
+
+
+def test_login_email_goes_through_the_gmail_relay_when_set(client, monkeypatch):
+    """The free Gmail relay (Google Apps Script) is used before Brevo, and a refusal is an error."""
+    import json
+    import urllib.request
+
+    from app.config import settings
+
+    sent = []
+
+    class Answer:
+        def __init__(self, text):
+            self.text = text
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self):
+            return self.text
+
+    monkeypatch.setattr(settings, "email_relay_url", "https://script.google.com/macros/s/x/exec")
+    monkeypatch.setattr(settings, "email_relay_secret", "s3cret")
+    monkeypatch.setattr(urllib.request, "urlopen", lambda req, timeout=0: (sent.append(json.loads(req.data)), Answer(b"ok"))[1])
+    r = client.post(f"{API}/auth/otp/request", json={"email": "relay@example.com"})
+    assert r.status_code == 202
+    assert sent[0]["to"] == "relay@example.com" and sent[0]["secret"] == "s3cret" and "login code" in sent[0]["text"]
+
+    monkeypatch.setattr(urllib.request, "urlopen", lambda req, timeout=0: Answer(b"denied"))
+    from app.models import OtpCode  # noqa: F401  (a fresh address avoids the resend wait)
+    r = client.post(f"{API}/auth/otp/request", json={"email": "relay2@example.com"})
+    assert r.status_code == 503 and r.json()["error"]["code"] == "EMAIL_FAILED"
