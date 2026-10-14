@@ -41,9 +41,10 @@ def db():
 def client(db):
     from app.routers.auth import code_limiter
     from app.routers.invites import office_limiter, redeem_limiter
-    from app.routers.public import lookup_limiter
+    from app.routers.public import lookup_limiter, patient_login_limiter
 
     lookup_limiter.reset()
+    patient_login_limiter.reset()
     code_limiter.reset()
     redeem_limiter.reset()
     office_limiter.reset()

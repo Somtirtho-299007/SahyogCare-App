@@ -160,7 +160,8 @@ def test_watchdog_endpoint_is_for_coordinators(client, auth):
     assert post(client, "/watchdog/run", auth("WORKER")).status_code == 403
     r = post(client, "/watchdog/run", auth("COORDINATOR"))
     assert r.status_code == 200 and set(r.json()) == {"not_accepted", "not_arrived", "follow_ups_overdue", "coordinator_alerts",
-                                              "bed_holds_expired", "ambulance_alerts"}
+                                              "bed_holds_expired", "ambulance_alerts", "courses_completed",
+                                              "dose_reminders", "bed_update_reminders"}
 
 
 # ---------- activity summary and dashboards ----------
