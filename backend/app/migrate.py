@@ -33,7 +33,8 @@ def _version_of_old_database(tables: set[str]) -> str | None:
     if "facilities" not in tables:
         return None
     if "photos" in tables:
-        return "0008"
+        users = {c["name"] for c in inspect(engine).get_columns("users")}
+        return "0009" if "code_hash" in users else "0008"
     if "bed_holds" in tables:
         columns = {c["name"] for c in inspect(engine).get_columns("follow_ups")}
         return "0007" if "sent_at" in columns else "0006"

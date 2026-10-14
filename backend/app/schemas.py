@@ -163,11 +163,28 @@ class UserOut(BaseModel):
 
 
 class TokensOut(BaseModel):
-    access_token: str
-    refresh_token: str
+    """Either the login tokens, or (code_required) the second step: type your personal code."""
+
+    access_token: str | None = None
+    refresh_token: str | None = None
     token_type: str = "bearer"
-    expires_in: int  # seconds until the access token expires
-    user: UserOut
+    expires_in: int | None = None  # seconds until the access token expires
+    user: UserOut | None = None
+    # Second step: the person is approved, so their personal code is needed too.
+    code_required: bool = False
+    code_token: str | None = None  # short-lived; send it back with the code
+    # A newly issued personal code, shown once on the person's own dashboard.
+    new_code: str | None = None
+
+
+class CodeLoginIn(BaseModel):
+    code_token: str = Field(max_length=2000)
+    code: str = Field(min_length=4, max_length=20)
+
+
+class MeOut(UserOut):
+    # Only ever sent to the person themselves, until they confirm they have written it down.
+    new_code: str | None = None
 
 
 # ---------- Patients and encounters ----------

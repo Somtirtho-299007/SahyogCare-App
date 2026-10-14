@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     # Secret for POST /watchdog/tick (empty = that endpoint is off).
     cron_secret: str = ""
 
+    # Login-code requests allowed per minute from one internet address. People on the same
+    # Wi-Fi share one address, so raise it for a big test day (0 = the default in rules.py).
+    login_codes_per_minute: int = 0
+
     # SMS (India). Empty = no SMS: messages go by email when an address is known.
     # Fast2SMS: put the API key here. Phone-number login also needs this.
     sms_api_key: str = ""

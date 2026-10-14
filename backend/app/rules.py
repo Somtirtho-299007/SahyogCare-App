@@ -238,8 +238,11 @@ OTP_LENGTH = 6
 OTP_VALID_FOR = timedelta(minutes=5)
 OTP_MAX_ATTEMPTS = 5
 OTP_RESEND_AFTER = timedelta(seconds=60)
-# Login code requests allowed per IP address per minute (anyone may sign up).
-OTP_REQUESTS_PER_MINUTE = 10
+# Login code requests allowed per IP address per minute (anyone may sign up). Many people on
+# one Wi-Fi share an address, so this can be raised with SAHYOG_LOGIN_CODES_PER_MINUTE.
+OTP_REQUESTS_PER_MINUTE = 30
+# Wrong personal codes allowed per account per 10 minutes.
+PERSONAL_CODE_TRIES_PER_10_MIN = 5
 
 
 # ---------- Referrals ----------
@@ -255,8 +258,8 @@ PATIENT_CHECKLIST = [
     "Show your referral pass at the facility desk",
 ]
 
-# Public status lookups allowed per IP address per minute.
-PUBLIC_LOOKUPS_PER_MINUTE = 5
+# Public status lookups allowed per IP address per minute (shared Wi-Fi counts as one address).
+PUBLIC_LOOKUPS_PER_MINUTE = 20
 
 
 # ---------- Watchdog ----------
@@ -356,30 +359,10 @@ AMBULANCE_NOT_DISPATCHED_AFTER: dict[Triage, timedelta] = {
 AMBULANCE_LATE_AFTER_ETA = timedelta(minutes=30)
 
 
-# ---------- Invite codes ----------
+# ---------- Joining ----------
 
-# Readable prefix by role, then a random part. The prefix only helps people read the
-# code; the random part (8 characters from 32, about a trillion combinations) is the secret.
-INVITE_PREFIX = {
-    Role.COORDINATOR: "DA",
-    Role.FACILITY_STAFF: "HS",
-    Role.DOCTOR: "DR",
-    Role.WORKER: "AS",
-}
-INVITE_RANDOM_LENGTH = 8
-# Wrong codes a logged-in person may try before waiting (stops guessing).
-INVITE_ATTEMPTS_PER_10_MIN = 5
 # Wrong office passphrases a logged-in person may try per 10 minutes.
 OFFICE_ATTEMPTS_PER_10_MIN = 5
-# Codes for coordinators are always single-use and short-lived.
-COORDINATOR_INVITE_MAX_DAYS = 7
-
-
-def new_invite_code(role: str, place: str) -> str:
-    """e.g. HS-KAL-7K3M9QWX: role, first three letters of the hospital or district, secret part."""
-    letters = "".join(ch for ch in place.upper() if ch.isalpha())[:3].ljust(3, "X")
-    secret = "".join(secrets.choice(CODE_ALPHABET) for _ in range(INVITE_RANDOM_LENGTH))
-    return f"{INVITE_PREFIX[Role(role)]}-{letters}-{secret}"
 
 
 # ---------- Health record: conditions, care chart, reminders ----------
@@ -508,7 +491,7 @@ EMERGENCY_GUIDE: dict[str, tuple[str, str, list[str]]] = {
 # A patient can have only one self-booked emergency open at a time.
 EMERGENCY_PER_PATIENT_OPEN = 1
 # Patient sign-in attempts (Health ID + phone digits) allowed per IP per minute.
-PATIENT_LOGINS_PER_MINUTE = 5
+PATIENT_LOGINS_PER_MINUTE = 20
 
 # Patient Health ID shown on the ASHA's register, e.g. "HID-7K3M9Q".
 HEALTH_ID_LENGTH = 6

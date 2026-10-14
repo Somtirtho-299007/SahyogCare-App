@@ -46,6 +46,14 @@ def _make_token(user: User, kind: str, lifetime: timedelta) -> str:
     return jwt.encode(payload, settings.secret_key, algorithm=ALGORITHM)
 
 
+CODE_STEP_MINUTES = 10
+
+
+def code_step_token_for(user: User) -> str:
+    """Proves the email/phone step was passed; only good for typing the personal code next."""
+    return _make_token(user, "code-step", timedelta(minutes=CODE_STEP_MINUTES))
+
+
 def access_token_for(user: User) -> str:
     return _make_token(user, "access", timedelta(minutes=settings.access_token_minutes))
 

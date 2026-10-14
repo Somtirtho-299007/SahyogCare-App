@@ -121,6 +121,11 @@ class User(Base):
     approved: Mapped[bool] = mapped_column(Boolean, default=True, server_default=true())
     # Own photo, taken at sign-up so the district office can check a real ASHA is joining.
     photo_id: Mapped[str | None] = mapped_column(ID)
+    # Personal code (see app/staffcode.py): keyed hash only, unique across everyone.
+    code_hash: Mapped[str | None] = mapped_column(String(64), unique=True)
+    # The new code itself, kept only until the person confirms they have written it down.
+    pending_code: Mapped[str | None] = mapped_column(String(12))
+    code_issued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     @property

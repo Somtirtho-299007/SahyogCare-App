@@ -25,7 +25,7 @@ from app.routers import (
     facilities,
     followups,
     health,
-    invites,
+    office,
     insights,
     notifications,
     patients,
@@ -80,7 +80,7 @@ app.include_router(sync.router, prefix=API)
 app.include_router(public.router, prefix=API)
 app.include_router(users.router, prefix=API)
 app.include_router(access.router, prefix=API)
-app.include_router(invites.router, prefix=API)
+app.include_router(office.router, prefix=API)
 
 
 @app.get("/", include_in_schema=False)

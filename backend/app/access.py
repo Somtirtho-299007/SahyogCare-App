@@ -36,15 +36,24 @@ def patient_scope(user: User) -> ColumnElement[bool]:
     return Patient.created_by_id.in_(select(User.id).where(User.district == user.district))
 
 
-def get_referral_for(db: Session, user: User, referral_id: str) -> Referral:
-    referral = db.scalar(select(Referral).where(Referral.id == referral_id, referral_scope(user)))
+def get_referral_for(db: Session, user: User, referral_id: str, lock: bool = False) -> Referral:
+    """lock=True for anything that changes the referral: on PostgreSQL the row is locked until the
+    change is saved, so two people pressing the same button at once are handled one after the other
+    (the second then sees the new status and is refused instead of recording the step twice)."""
+    stmt = select(Referral).where(Referral.id == referral_id, referral_scope(user))
+    if lock:
+        stmt = stmt.with_for_update()
+    referral = db.scalar(stmt)
     if referral is None:
         raise ApiError(404, "NOT_FOUND", NOT_FOUND)
     return referral
 
 
-def get_patient_for(db: Session, user: User, patient_id: str) -> Patient:
-    patient = db.scalar(select(Patient).where(Patient.id == patient_id, patient_scope(user)))
+def get_patient_for(db: Session, user: User, patient_id: str, lock: bool = False) -> Patient:
+    stmt = select(Patient).where(Patient.id == patient_id, patient_scope(user))
+    if lock:
+        stmt = stmt.with_for_update()
+    patient = db.scalar(stmt)
     if patient is None:
         raise ApiError(404, "NOT_FOUND", NOT_FOUND)
     return patient
