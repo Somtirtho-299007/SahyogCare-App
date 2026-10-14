@@ -455,12 +455,6 @@ class PassVerifyOut(BaseModel):
 # ---------- Public patient lookup ----------
 
 
-class PublicLookupIn(BaseModel):
-    code: Annotated[str, BeforeValidator(lambda v: v.strip().upper() if isinstance(v, str) else v),
-                    Field(pattern=r"^SC-[0-9A-Z]{6}$")]
-    phone_last4: str = Field(pattern=r"^\d{4}$")
-
-
 class PublicStep(BaseModel):
     status: str
     at: datetime
@@ -471,22 +465,6 @@ class PublicAmbulance(BaseModel):
     expected_at: datetime | None
     vehicle_number: str | None
     driver_phone: str | None
-
-
-class PublicLookupOut(BaseModel):
-    code: str
-    status: str
-    facility_name: str
-    timeline: list[PublicStep]
-    checklist: list[str]
-    # When the patient was sent to another hospital: the new code to use from now on.
-    rerouted_to_code: str | None = None
-    rerouted_to_facility: str | None = None
-    ambulance: PublicAmbulance | None = None
-    emergency_number: str = "108"
-
-
-# ---------- Notifications ----------
 
 
 class NotificationOut(BaseModel):
@@ -722,11 +700,35 @@ class RegisterRowOut(BaseModel):
 # ---------- Patient sign-in and night emergency ----------
 
 
-class PatientLoginIn(BaseModel):
-    # Health ID (HID-XXXXXX) from the ASHA, or any referral code (SC-XXXXXX) of the patient.
-    code: Annotated[str, BeforeValidator(lambda v: v.strip().upper() if isinstance(v, str) else v),
-                    Field(pattern=r"^(HID|SC)-[0-9A-Z]{6}$")]
-    phone_last4: str = Field(pattern=r"^\d{4}$")
+class PatientCodeRequestIn(BaseModel):
+    """The mobile number (10 digits) or email the ASHA registered for the patient."""
+
+    phone: Phone | None = None
+    email: Email | None = None
+
+
+class PatientCodeRequestOut(BaseModel):
+    # sms | email: a code was sent there (if anyone is registered on it).
+    # asha: no SMS service here — ask the ASHA to show a sign-in code.
+    channel: str
+    dev_code: str | None = None
+
+
+class PatientCodeVerifyIn(PatientCodeRequestIn):
+    code: str = Field(pattern=r"^\d{6}$")
+
+
+class PatientChooseIn(BaseModel):
+    choose_token: str
+    patient_id: str
+
+
+class PatientSignInCodeOut(BaseModel):
+    """Shown on the ASHA's phone for the patient to type on theirs."""
+
+    code: str
+    phone: str
+    expires_at: datetime
 
 
 class PatientTokenOut(BaseModel):
@@ -735,6 +737,40 @@ class PatientTokenOut(BaseModel):
     name: str
     health_id: str | None
     language: str
+
+
+class PatientChoice(BaseModel):
+    id: str
+    name: str
+    age: int
+    sex: str | None = None
+
+
+class PatientChoiceOut(BaseModel):
+    """Either signed in, or (a family sharing one phone) the people to choose from."""
+
+    signed_in: PatientTokenOut | None = None
+    choose_token: str | None = None
+    people: list[PatientChoice] = []
+
+
+class MyReferralOut(BaseModel):
+    """One of the patient's own referrals, as the patient sees it."""
+
+    id: str
+    code: str
+    status: str
+    is_open: bool
+    facility_name: str
+    facility_phone: str | None
+    requested_service: str
+    reason: str
+    triage: str
+    created_at: datetime
+    timeline: list[PublicStep]
+    rerouted_to_facility: str | None = None
+    follow_up_due: datetime | None = None
+    ambulance: "PublicAmbulance | None" = None
 
 
 class EmergencyIn(BaseModel):

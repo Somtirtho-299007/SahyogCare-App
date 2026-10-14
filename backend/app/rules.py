@@ -250,17 +250,6 @@ PERSONAL_CODE_TRIES_PER_10_MIN = 5
 DEFAULT_FOLLOW_UP_DAYS = 7
 URGENCY_ORDER = {Triage.EMERGENCY: 0, Triage.PRIORITY: 1, Triage.ROUTINE: 2}
 
-# Shown to patients on the public status page.
-PATIENT_CHECKLIST = [
-    "Carry your referral code or referral pass",
-    "Bring your current medicines and any reports",
-    "Keep a phone number reachable",
-    "Show your referral pass at the facility desk",
-]
-
-# Public status lookups allowed per IP address per minute (shared Wi-Fi counts as one address).
-PUBLIC_LOOKUPS_PER_MINUTE = 20
-
 
 # ---------- Watchdog ----------
 
@@ -490,8 +479,11 @@ EMERGENCY_GUIDE: dict[str, tuple[str, str, list[str]]] = {
 }
 # A patient can have only one self-booked emergency open at a time.
 EMERGENCY_PER_PATIENT_OPEN = 1
-# Patient sign-in attempts (Health ID + phone digits) allowed per IP per minute.
-PATIENT_LOGINS_PER_MINUTE = 20
+# Patient sign-in requests (code asked for or typed) allowed per IP per minute; a
+# classroom on one Wi-Fi counts as one address.
+PATIENT_LOGINS_PER_MINUTE = 30
+# How long a sign-in code the ASHA shows on her phone stays valid.
+PATIENT_SIGN_IN_CODE_VALID_FOR = timedelta(minutes=15)
 
 # Patient Health ID shown on the ASHA's register, e.g. "HID-7K3M9Q".
 HEALTH_ID_LENGTH = 6

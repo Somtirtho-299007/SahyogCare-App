@@ -112,9 +112,13 @@ def main() -> int:
         print(f"    Bed {arrived['bed']['status']}"
               + (f"; ambulance {arrived['ambulance']['status']}" if arrived["ambulance"] else ""))
 
-        say("9", "Rina's family checks with the OLD code and is pointed to the new one.")
-        pub = c.post(f"{API}/public/referral-status", json={"code": ref["code"], "phone_last4": "3210"}).json()
-        print(f"    {pub['code']}: {pub['status']} -> now {pub['rerouted_to_code']} at {pub['rerouted_to_facility']}")
+        say("9", "Rina signs in to her own account (code to her mobile) and sees both referrals under her name.")
+        phone = ref["patient"]["phone"]
+        sent = c.post(f"{API}/public/login/request", json={"phone": phone}).json()
+        got = c.post(f"{API}/public/login/verify", json={"phone": phone, "code": sent["dev_code"]}).json()
+        token = got["signed_in"]["token"]
+        for r in c.get(f"{API}/public/me/referrals", headers={"Authorization": f"Bearer {token}"}).json():
+            print(f"    {r['code']}: {r['status']} at {r['facility_name']}")
 
         say("10", "ASHA's alerts:")
         for n in call("GET", "/notifications", "asha"):
