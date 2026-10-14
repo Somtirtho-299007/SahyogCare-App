@@ -8,6 +8,7 @@ import {
   api,
   currentUser,
   getDistricts,
+  loginMethods,
   logout,
   lookupReferral,
   newKey,
@@ -15,11 +16,23 @@ import {
   refreshMe,
   request,
   requestCode,
+  uploadPhoto,
   verifyCode,
 } from "./api.js";
+import {
+  FlagChip,
+  PatientHealthPortal,
+  PatientRecord,
+  PatientRegister,
+  PhotoPicker,
+  PhotoView,
+  VitalsGrid,
+  VitalsReadout,
+  useVitalRanges,
+} from "./health.jsx";
 import { LanguageProvider, LanguageSidebar, readLS, useLanguage, writeLS } from "./i18n.jsx";
 import { TOURS, Tour } from "./tour.jsx";
-import { Dashboard, Empty, Field, Skeleton, Stat, VitalInput } from "./ui.jsx";
+import { Dashboard, Empty, Field, Skeleton, Stat } from "./ui.jsx";
 
 const ROLES = {
   asha: { label: "ASHA / ANM", icon: "◉", desc: "Field worker coordination" },
@@ -32,6 +45,7 @@ const SCREEN_FOR = { WORKER: "asha", FACILITY_STAFF: "medical", DOCTOR: "medical
 const JOURNEY = ["CREATED", "ACCEPTED", "ARRIVAL_RECORDED", "CONSULTED", "OUTCOME_RECORDED", "FOLLOW_UP_DUE", "CLOSED"];
 const TRIAGE_LABEL = { EMERGENCY: "Emergency", PRIORITY: "Priority", ROUTINE: "Routine" };
 const isEmail = (x) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(x.trim());
+const isMobile = (x) => /^[6-9]\d{9}$/.test(x.trim());
 const pretty = (s) => (s || "").replaceAll("_", " ");
 const REFRESH_MS = 15000;
 
@@ -168,7 +182,7 @@ function App() {
           </span>
           {session.user && (
             <span className="email">
-              {session.user.email} · {session.user.district}
+              {session.user.email || session.user.phone} · {session.user.district}
             </span>
           )}
           <button className="ghost-btn" onClick={signOut}>
@@ -218,7 +232,21 @@ function AccessScreen({ user, onApproved, onSignOut, onPatient }) {
   const [districts, setDistricts] = useState(null); // null while loading
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [photoId, setPhotoId] = useState(user.photo_id || null);
+  const [photoBusy, setPhotoBusy] = useState(false);
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  // Her own photo, so the district office can check a real ASHA is joining.
+  const addPhoto = async (file) => {
+    setPhotoBusy(true);
+    setError("");
+    try {
+      setPhotoId((await uploadPhoto(file, "user")).id);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setPhotoBusy(false);
+    }
+  };
 
   const approvedRef = useRef(onApproved);
   approvedRef.current = onApproved;
@@ -400,6 +428,11 @@ function AccessScreen({ user, onApproved, onSignOut, onPatient }) {
               <>
                 <label>How the coordinator can confirm it's you (optional)</label>
                 <input value={form.note} onChange={set("note")} placeholder="e.g. ASHA, Chakdaha block, ID 1234" />
+                <label>Your photo {form.role === "WORKER" ? "(helps the district office confirm you are a real ASHA)" : "(optional)"}</label>
+                <div className="photo-line">
+                  {photoId && <PhotoView id={photoId} alt="You" className="photo-mini" />}
+                  <PhotoPicker label={photoId ? "Retake" : "Take a selfie"} onFile={addPhoto} busy={photoBusy} />
+                </div>
                 <button className="primary-btn" onClick={submit} disabled={!canSend || busy}>
                   {busy ? "Sending…" : "Ask to join"}
                 </button>
@@ -488,14 +521,18 @@ function CoordinatorDashboard({ user, toast }) {
           <div className="queue">
             {requests.map((r) => (
               <div className="queue-item" key={r.id}>
-                <div>
+                <div className="request-who">
+                  <PhotoView id={r.photo_id} alt={r.name} className="photo-face" />
+                  <div>
                   <span className="status-badge">{ROLE_LABEL[r.requested_role] || pretty(r.requested_role)}</span>
                   <h4>{r.name}</h4>
+                  {!r.photo_id && r.requested_role === "WORKER" && <small className="muted">No photo yet</small>}
                   <p>
-                    {r.email}
+                    {r.email || r.phone}
                     {r.facility_name ? ` · ${r.facility_name}` : ""}
                     {r.note ? ` · ${r.note}` : ""}
                   </p>
+                  </div>
                 </div>
                 <div className="queue-actions">
                   <button className="secondary-btn" disabled={busyId === r.id} onClick={() => decide(r, "reject")}>
@@ -1150,8 +1187,15 @@ function Auth({ onSignIn, onTour }) {
   const [demoOtp, setDemoOtp] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [phoneOk, setPhoneOk] = useState(false);
+  useEffect(() => {
+    loginMethods()
+      .then((m) => setPhoneOk(!!m.phone))
+      .catch(() => {});
+  }, []);
+  const validId = isEmail(email) || (phoneOk && isMobile(email));
   const sendOtp = async () => {
-    if (!isEmail(email) || busy) return;
+    if (!validId || busy) return;
     setBusy(true);
     setError("");
     try {
@@ -1235,19 +1279,19 @@ function Auth({ onSignIn, onTour }) {
             </>
           ) : (
             <>
-              <label>{t("email")}</label>
+              <label>{phoneOk ? "Email or mobile number" : t("email")}</label>
               <input
                 data-tour="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && !sent && sendOtp()}
                 readOnly={sent}
-                placeholder="you@gmail.com"
-                type="email"
-                autoComplete="email"
+                placeholder={phoneOk ? "you@gmail.com or 98XXXXXXXX" : "you@gmail.com"}
+                type={phoneOk ? "text" : "email"}
+                autoComplete={phoneOk ? "username" : "email"}
               />
               {!sent ? (
-                <button className="primary-btn" onClick={sendOtp} disabled={!isEmail(email) || busy}>
+                <button className="primary-btn" onClick={sendOtp} disabled={!validId || busy}>
                   {busy ? t("loading") : t("sendCode")}
                 </button>
               ) : (
@@ -1301,11 +1345,14 @@ function Auth({ onSignIn, onTour }) {
 
 // ---------- ASHA ----------
 
-const EMPTY_FORM = { name: "", age: "", phone: "", triage: "PRIORITY", symptom: "", consent: false };
+// patientId is set when the referral is for someone already on the ASHA's register.
+const EMPTY_FORM = { name: "", age: "", phone: "", triage: "PRIORITY", symptom: "", consent: false, patientId: null };
 
 function AshaDashboard({ toast }) {
   const { t } = useLanguage();
   // Everything the ASHA is in the middle of survives a refresh or a dropped connection.
+  const [view, setView] = usePersisted("sahyog_asha_view", "patients"); // patients | referral
+  const [patientSel, setPatientSel] = usePersisted("sahyog_asha_patient", null);
   const [step, setStep] = usePersisted("sahyog_asha_step", 0);
   const [form, setForm] = usePersisted("sahyog_asha_form", EMPTY_FORM);
   const [current, setCurrent] = usePersisted("sahyog_asha_current", null); // { patient, encounter }
@@ -1390,21 +1437,26 @@ function AshaDashboard({ toast }) {
   }, [referral?.id, referral?.is_open]);
 
   const formValid =
-    form.name.trim() && form.age !== "" && Number(form.age) <= 120 && /^[6-9]\d{9}$/.test(form.phone) && form.consent;
+    !!form.patientId ||
+    (form.name.trim() && form.age !== "" && Number(form.age) <= 120 && /^[6-9]\d{9}$/.test(form.phone) && form.consent);
 
   const submit = async () => {
     if (!formValid || busy) return;
     setBusy(true);
     try {
-      const patient = await api.post("/patients", {
-        name: form.name.trim(),
-        age: Number(form.age),
-        phone: form.phone,
-        consent_given: true,
-      });
+      // Someone already on the register keeps their one record; only new people are registered.
+      const patient = form.patientId
+        ? await api.get(`/patients/${form.patientId}`)
+        : await api.post("/patients", {
+            name: form.name.trim(),
+            age: Number(form.age),
+            phone: form.phone,
+            consent_given: true,
+          });
       const encounter = await api.post(`/patients/${patient.id}/encounters`, {
         reason: form.symptom.trim() || "Referral",
         triage: form.triage,
+        kind: "REFERRAL",
       });
       setCurrent({ patient, encounter });
       setStep(1);
@@ -1447,6 +1499,14 @@ function AshaDashboard({ toast }) {
     } finally {
       setBusy(false);
     }
+  };
+
+  // "Make referral" from the register: the referral goes under that patient's record.
+  const referFrom = (p) => {
+    newCase();
+    setForm({ ...EMPTY_FORM, patientId: p.id, name: p.name, age: String(p.age), phone: p.phone, consent: true });
+    setView("referral");
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const newCase = () => {
@@ -1515,6 +1575,32 @@ function AshaDashboard({ toast }) {
         <Stat label={t("openReferrals")} value={list.filter((r) => r.is_open).length} meta={t("updatedShared")} />
         <Stat label={t("alerts")} value={alerts.length} meta={t("alertsMeta")} />
       </div>
+      <div className="view-tabs" role="tablist">
+        <button role="tab" aria-selected={view === "patients"} className={view === "patients" ? "tab active" : "tab"} onClick={() => setView("patients")}>
+          👥 My patients
+        </button>
+        <button role="tab" aria-selected={view === "referral"} className={view === "referral" ? "tab active" : "tab"} onClick={() => setView("referral")}>
+          ➜ Referral{referral?.is_open ? ` · ${referral.code}` : ""}
+        </button>
+      </div>
+      {view === "patients" && (
+        <>
+          {alerts.length > 0 && (
+            <section className="panel alerts-strip">
+              {alerts.slice(0, 4).map((n) => (
+                <div className="mini-ref" key={n.id} role="button" tabIndex={0} onClick={() => readAlert(n)} title="Mark as read">
+                  <b>🔔</b>
+                  <span>{n.message}</span>
+                  <small>{new Date(n.created_at).toLocaleTimeString()}</small>
+                </div>
+              ))}
+            </section>
+          )}
+          <PatientRegister toast={toast} onReferral={referFrom} selectedId={patientSel} onSelect={setPatientSel} />
+        </>
+      )}
+      {view === "referral" && (
+      <>
       <section className="feature-grid">
         <div className="panel wide" data-tour="intake">
           <div className="panel-head">
@@ -1529,8 +1615,19 @@ function AshaDashboard({ toast }) {
           <div className="step-progress" aria-hidden="true">
             <i style={{ width: `${((step + 1) / 3) * 100}%` }} />
           </div>
+          {step === 0 && form.patientId && (
+            <div className="known-patient">
+              <b>{form.name}</b> · {form.age} y · 📞 {form.phone}
+              <small>On your register — this referral is added to the same record.</small>
+              <button className="link-btn" onClick={newCase}>
+                Someone else
+              </button>
+            </div>
+          )}
           {step === 0 && (
             <div className="form-grid">
+              {!form.patientId && (
+              <>
               <Field label={t("patientName")}>
                 <input
                   value={form.name}
@@ -1555,6 +1652,8 @@ function AshaDashboard({ toast }) {
                   inputMode="tel"
                 />
               </Field>
+              </>
+              )}
               <Field label={t("triage")}>
                 <select value={form.triage} onChange={(e) => setForm({ ...form, triage: e.target.value })}>
                   <option value="ROUTINE">Routine</option>
@@ -1569,6 +1668,7 @@ function AshaDashboard({ toast }) {
                   placeholder="Administrative summary only — no autonomous diagnosis."
                 />
               </Field>
+              {!form.patientId && (
               <label className="field full" style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
                 <input
                   type="checkbox"
@@ -1578,6 +1678,7 @@ function AshaDashboard({ toast }) {
                 />
                 <span>{t("consentLabel")}</span>
               </label>
+              )}
               <button className="primary-btn" onClick={submit} disabled={!formValid || busy}>
                 {busy ? t("loading") : t("saveCase")}
               </button>
@@ -1761,7 +1862,9 @@ function AshaDashboard({ toast }) {
           )}
         </div>
       </section>
-      <VitalsPanel patient={current?.patient} triage={form.triage} toast={toast} />
+      <VitalsPanel patient={current?.patient} referral={referral} toast={toast} />
+      </>
+      )}
       <ESanjeevaniCard
         toast={toast}
         summary={
@@ -1774,102 +1877,54 @@ function AshaDashboard({ toast }) {
   );
 }
 
-const VITAL_FIELDS = ["systolic", "diastolic", "pulse", "temperature", "spo2", "respiratoryRate", "glucose", "weight"];
-// Screen field → backend field.
-const VITAL_API = {
-  systolic: "systolic",
-  diastolic: "diastolic",
-  pulse: "pulse",
-  temperature: "temperature_c",
-  spo2: "spo2",
-  respiratoryRate: "respiratory_rate",
-  glucose: "glucose_mg_dl",
-  weight: "weight_kg",
-};
-const emptyVitals = () => Object.fromEntries(VITAL_FIELDS.map((f) => [f, ""]));
-
-function VitalsPanel({ patient, triage, toast }) {
+// Readings for the patient of the current referral, with normal ranges beside each one.
+// Saved as a new reading on the patient's record (older readings are never overwritten).
+function VitalsPanel({ patient, referral, toast }) {
   const { t } = useLanguage();
-  const [v, setV] = useState(emptyVitals);
-  const [meds, setMeds] = useState([]);
-  const [updatedAt, setUpdatedAt] = useState(null);
+  const ranges = useVitalRanges();
+  const [values, setValues] = useState({});
+  const [latest, setLatest] = useState(null);
   const [busy, setBusy] = useState(false);
-  useEffect(() => {
-    setV(emptyVitals());
-    setMeds([]);
-    setUpdatedAt(null);
+  const loadLatest = useCallback(() => {
     if (!patient) return;
-    let alive = true;
     api
       .get(`/patients/${patient.id}/encounters`)
-      .then((list) => {
-        if (!alive) return;
-        const withVitals = list.find((e) => Object.values(e.vitals).some((x) => x !== null));
-        if (withVitals) {
-          setV(Object.fromEntries(VITAL_FIELDS.map((f) => [f, withVitals.vitals[VITAL_API[f]] ?? ""])));
-          setUpdatedAt(withVitals.created_at);
-        }
-        const withMeds = list.find((e) => e.medicines.length);
-        if (withMeds)
-          setMeds(
-            withMeds.medicines.map((m, i) => ({
-              id: i + 1,
-              name: m.name,
-              dose: m.dose || "",
-              frequency: m.frequency || "",
-              adherence: m.notes || "",
-            })),
-          );
-      })
+      .then((list) => setLatest(list.find((e) => Object.values(e.vitals).some((x) => x !== null)) || null))
       .catch(() => {});
-    return () => {
-      alive = false;
-    };
   }, [patient?.id]);
+  useEffect(() => {
+    setValues({});
+    setLatest(null);
+    loadLatest();
+  }, [loadLatest]);
   if (!patient)
     return (
       <section className="panel vitals-panel">
         <div className="empty">
           <div>♡</div>
           <h4>Select a patient case first</h4>
-          <p>Patient vitals and ongoing medicines will appear here after a case is created.</p>
+          <p>Readings appear here after a case is created. Medicines are on the patient's record (My patients).</p>
         </div>
       </section>
     );
-  const bpSys = Number(v.systolic),
-    bpDia = Number(v.diastolic),
-    review = (bpSys && bpSys >= 120) || (bpDia && bpDia >= 80);
-  const set = (k, x) => setV((a) => ({ ...a, [k]: x }));
-  const add = () => setMeds((a) => [...a, { id: Date.now(), name: "", dose: "", frequency: "", adherence: "" }]);
-  const med = (id, k, x) => setMeds((a) => a.map((m) => (m.id === id ? { ...m, [k]: x } : m)));
-  // Only save when at least one reading or a named medicine has been entered.
-  const hasData = VITAL_FIELDS.some((f) => String(v[f]).trim() !== "") || meds.some((m) => m.name.trim());
+  const entered = Object.fromEntries(Object.entries(values).filter(([, v]) => v !== "" && v !== undefined).map(([k, v]) => [k, Number(v)]));
   const save = async () => {
     if (busy) return;
-    if (!hasData) return toast(t("enterReading"));
+    if (!Object.keys(entered).length) return toast(t("enterReading"));
     setBusy(true);
     try {
-      const vitals = Object.fromEntries(VITAL_FIELDS.filter((f) => v[f] !== "").map((f) => [VITAL_API[f], Number(v[f])]));
-      const medicines = meds
-        .filter((m) => m.name.trim())
-        .map((m) => ({ name: m.name.trim(), dose: m.dose || null, frequency: m.frequency || null, notes: m.adherence || null }));
       const enc = await api.post(`/patients/${patient.id}/encounters`, {
-        reason: "Vitals and medicines update",
-        triage: triage || "ROUTINE",
-        vitals,
-        medicines,
+        reason: referral ? `New readings for ${referral.code}` : "New readings",
+        kind: "VITALS_UPDATE",
+        referral_id: referral?.id || null,
+        vitals: entered,
       });
-      setUpdatedAt(enc.created_at);
+      setValues({});
+      setLatest(enc);
       toast(enc.triage_suggestion || t("savedVitals"));
     } catch (e) {
       const fields = e.details?.fields;
-      toast(
-        fields
-          ? `${e.message} ${Object.entries(fields)
-              .map(([k, m]) => `${k}: ${m}`)
-              .join(" · ")}`
-          : e.message,
-      );
+      toast(fields ? `${e.message} ${Object.entries(fields).map(([k, m]) => `${k}: ${m}`).join(" · ")}` : e.message);
     } finally {
       setBusy(false);
     }
@@ -1882,78 +1937,24 @@ function VitalsPanel({ patient, triage, toast }) {
           <h3>{t("vitalsTitle")}</h3>
           <p className="muted">{patient.name}</p>
         </div>
-        {updatedAt && (
+        {latest && (
           <span className="step-chip">
-            {t("lastUpdated")} {new Date(updatedAt).toLocaleTimeString()}
+            {t("lastUpdated")} {new Date(latest.created_at).toLocaleString()}
           </span>
         )}
       </div>
-      <div className="bp-highlight">
-        <div className="bp-symbol">
-          <span>♥</span>
-          <i></i>
+      {latest && (
+        <div className="latest-vitals">
+          <VitalsReadout vitals={latest.vitals} flags={latest.flags} ranges={ranges} />
         </div>
-        <div className="bp-copy">
-          <span>{t("bloodPressure")}</span>
-          <strong>
-            {v.systolic || "—"} / {v.diastolic || "—"} <small>mmHg</small>
-          </strong>
-          <small>{t("bpReference")}</small>
-        </div>
-        <span className={`vital-status ${review ? "review" : "ok"}`}>{review ? t("reviewReading") : t("withinReference")}</span>
-      </div>
-      <div className="vitals-grid">
-        <VitalInput label={t("systolic")} value={v.systolic} set={(x) => set("systolic", x)} unit="mmHg" />
-        <VitalInput label={t("diastolic")} value={v.diastolic} set={(x) => set("diastolic", x)} unit="mmHg" />
-        <VitalInput label={t("pulse")} value={v.pulse} set={(x) => set("pulse", x)} unit="bpm" />
-        <VitalInput label={t("temperature")} value={v.temperature} set={(x) => set("temperature", x)} unit="°C" />
-        <VitalInput label={t("spo2")} value={v.spo2} set={(x) => set("spo2", x)} unit="%" />
-        <VitalInput label={t("respiratoryRate")} value={v.respiratoryRate} set={(x) => set("respiratoryRate", x)} unit="/min" />
-        <VitalInput label={t("glucose")} value={v.glucose} set={(x) => set("glucose", x)} unit="mg/dL" />
-        <VitalInput label={t("weight")} value={v.weight} set={(x) => set("weight", x)} unit="kg" />
-      </div>
-      <div className="medicine-section">
-        <div className="section-title">
-          <div>
-            <p className="eyebrow">{t("medicinesTitle")}</p>
-            <h4>{t("medicinesTitle")}</h4>
-          </div>
-          <button className="secondary-btn" onClick={add}>
-            ＋ {t("addMedicine")}
-          </button>
-        </div>
-        {meds.length === 0 ? (
-          <div className="medicine-empty">{t("noMedicines")}</div>
-        ) : (
-          <div className="medicine-list">
-            {meds.map((m) => (
-              <div className="medicine-row" key={m.id}>
-                <input value={m.name} onChange={(e) => med(m.id, "name", e.target.value)} placeholder={t("medicineName")} />
-                <input value={m.dose} onChange={(e) => med(m.id, "dose", e.target.value)} placeholder={t("dose")} />
-                <input
-                  value={m.frequency}
-                  onChange={(e) => med(m.id, "frequency", e.target.value)}
-                  placeholder={t("frequency")}
-                />
-                <input
-                  value={m.adherence}
-                  onChange={(e) => med(m.id, "adherence", e.target.value)}
-                  placeholder={t("adherence")}
-                />
-                <button className="link-btn remove-med" onClick={() => setMeds((a) => a.filter((x) => x.id !== m.id))}>
-                  {t("remove")}
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+      )}
+      <VitalsGrid values={values} onChange={setValues} ranges={ranges} />
       <div className="action-row">
-        <button className="primary-btn" onClick={save} disabled={busy || !hasData} title={hasData ? "" : t("enterReading")}>
+        <button className="primary-btn" onClick={save} disabled={busy || !Object.keys(entered).length}>
           {busy ? t("loading") : t("updateVitals")}
         </button>
       </div>
-      <p className="medical-note">ℹ {t("bpNote")}</p>
+      <p className="medical-note">ℹ Normal ranges are for adults at rest and are guides only; children and pregnancy differ. The ASHA and doctor decide.</p>
     </section>
   );
 }
@@ -1962,6 +1963,7 @@ function VitalsPanel({ patient, triage, toast }) {
 
 function PatientDashboard({ toast }) {
   const { t } = useLanguage();
+  const [ptab, setPtab] = usePersisted("sahyog_patient_tab", "health"); // health | track
   const [code, setCode] = usePersisted("sahyog_patient_code", "");
   const [last4, setLast4] = usePersisted("sahyog_patient_last4", "");
   const [result, setResult] = useState(null);
@@ -1991,6 +1993,17 @@ function PatientDashboard({ toast }) {
   const status = result ? pretty(result.status) : "";
   return (
     <Dashboard title={t("patientDashboard")} subtitle={t("patientSub")}>
+      <div className="view-tabs" role="tablist">
+        <button role="tab" aria-selected={ptab === "health"} className={ptab === "health" ? "tab active" : "tab"} onClick={() => setPtab("health")}>
+          ♡ {t("myHealth")}
+        </button>
+        <button role="tab" aria-selected={ptab === "track"} className={ptab === "track" ? "tab active" : "tab"} onClick={() => setPtab("track")}>
+          ➜ {t("trackReferral")}
+        </button>
+      </div>
+      {ptab === "health" && <PatientHealthPortal toast={toast} />}
+      {ptab === "track" && (
+      <>
       <div className="stats">
         <Stat
           tour="stats"
@@ -2068,6 +2081,8 @@ function PatientDashboard({ toast }) {
           </ul>
         </div>
       </section>
+      </>
+      )}
       <EmergencyBox />
       <ESanjeevaniCard toast={toast} summary={result ? `SahyogCare referral ${result.code} to ${result.facility_name}.` : ""} />
     </Dashboard>
@@ -2120,6 +2135,8 @@ function MedicalDashboard({ user, toast }) {
   const [reason, setReason] = useState("");
   const [note, setNote] = useState("");
   const [busyId, setBusyId] = useState(null);
+  const [recordFor, setRecordFor] = useState(null); // referral whose patient record is open
+  const ranges = useVitalRanges();
   const fail = (e) => toast(e.message);
 
   const load = useCallback(async () => {
@@ -2218,7 +2235,17 @@ function MedicalDashboard({ user, toast }) {
                       {r.code} · {r.facility.name} · {r.requested_service}
                     </p>
                     <p>{r.reason}</p>
-                    <VitalsLine v={r.vitals} />
+                    {r.origin === "PATIENT_EMERGENCY" && <span className="chip deceased-chip">🚨 Booked by the patient at night</span>}
+                    {r.latest_vitals ? (
+                      <div className="queue-vitals">
+                        <small className="muted">Latest readings · {new Date(r.latest_vitals_at).toLocaleString()}</small>
+                        <VitalsReadout vitals={r.latest_vitals} flags={r.vitals_flags} ranges={ranges} />
+                      </div>
+                    ) : (
+                      <div className="queue-vitals">
+                        <VitalsReadout vitals={r.vitals} flags={r.vitals_flags} ranges={ranges} />
+                      </div>
+                    )}
                     <div className="ward-chips">
                       <BedChip bed={r.bed} />
                       {r.rerouted_from_code && <span className="chip">Sent on from {r.rerouted_from_code}</span>}
@@ -2265,6 +2292,9 @@ function MedicalDashboard({ user, toast }) {
                           Patient picked up
                         </button>
                       )}
+                      <button className="link-btn" onClick={() => setRecordFor(recordFor === r.id ? null : r.id)}>
+                        {recordFor === r.id ? "Hide record" : "📋 Patient record"}
+                      </button>
                       {r.status === "CREATED" && user?.role === "FACILITY_STAFF" && rejecting !== r.id && (
                         <button className="secondary-btn" onClick={() => setRejecting(r.id)} disabled={busyId === r.id}>
                           {t("reject")}
@@ -2272,6 +2302,17 @@ function MedicalDashboard({ user, toast }) {
                       )}
                     </div>
                   </div>
+                  {recordFor === r.id && (
+                    <div className="record-wrap" style={{ width: "100%" }}>
+                      <PatientRecord
+                        patientId={r.patient.id}
+                        role={user?.role}
+                        referralId={r.id}
+                        toast={toast}
+                        onClose={() => (setRecordFor(null), load())}
+                      />
+                    </div>
+                  )}
                   {dispatching === r.id && (
                     <div className="form-grid reveal" style={{ width: "100%", marginTop: 10 }}>
                       <Field label="Pickup">
@@ -2366,19 +2407,6 @@ const VITAL_LABELS = [
   ["glucose_mg_dl", "Sugar", (v) => v.glucose_mg_dl],
 ];
 
-function VitalsLine({ v }) {
-  const parts = v ? VITAL_LABELS.filter(([k]) => v[k] !== null && v[k] !== undefined) : [];
-  if (!parts.length) return null;
-  return (
-    <p className="vitals-line">
-      {parts.map(([k, label, fmt]) => (
-        <span key={k}>
-          {label} <b>{fmt(v)}</b>
-        </span>
-      ))}
-    </p>
-  );
-}
 
 function PassScanner({ toast, onDone }) {
   const { t } = useLanguage();
