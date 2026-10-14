@@ -24,9 +24,14 @@
 | Method | Route | Role | Purpose |
 |---|---|---|---|
 | POST | `/auth/otp/request` | Public | Send a one-time code to a pre-registered email |
-| POST | `/auth/otp/verify` | Public | Exchange email + code for access and refresh tokens |
+| GET | `/auth/methods` | Public | Which sign-in methods are on (email; phone when SMS is configured) |
+| POST | `/auth/otp/verify` | Public | Email/phone + code → tokens, or `{code_required, code_token}` when the personal code is needed next |
+| POST | `/auth/code` | Public (needs `code_token`) | `{"code_token", "code"}` → access and refresh tokens; 5 wrong tries per 10 minutes |
+| POST | `/office/join` | Authenticated, not yet approved | `{"district", "name", "passphrase"}` → becomes that area's coordinator |
+| POST | `/me/code-seen` | Authenticated | The person wrote their new personal code down; the plain copy is forgotten |
 | POST | `/auth/refresh` | Public (needs refresh token in body) | `{"refresh_token": "..."}` → new access and refresh tokens |
-| GET | `/me` | Authenticated | Current user and role |
+| GET | `/me` | Authenticated | Current user and role; `new_code` once, right after approval or a reset |
+| POST | `/users/{id}/reset-code` | COORDINATOR (same area) | Replace a person's personal code; shown to them at next sign-in |
 
 ## Patients
 

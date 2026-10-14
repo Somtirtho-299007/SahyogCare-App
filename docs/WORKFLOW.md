@@ -67,9 +67,48 @@ Patient: code + last 4 phone digits → own referral status.
 ## 5. Backend logic
 
 ### Login
-- OTP only to pre-registered, active emails.
-- 6-digit OTP, stored hashed, expires after 5 minutes, locked after 5 wrong attempts, 60 seconds before a resend.
-- Access token 15 minutes, refresh token 7 days.
+
+The start screen asks one thing: **who are you?** Three big doors:
+
+| Door | Who | How they get in |
+|---|---|---|
+| Patient | Anyone | Straight in. Health ID or referral code + last 4 digits of the phone; no account. |
+| Health worker | ASHA, hospital staff, doctor | Email (or mobile, when SMS is on) → 6-digit code → **personal code** |
+| District office | Coordinators | Same as health worker; the first time, the area's office passphrase instead of a request |
+
+**First time (health worker):** sign in with the emailed code → fill one short form
+(name, role, area, hospital for staff/doctors, selfie, optional ID note) → "Request sent"
+→ the page checks every 30 seconds → the district office approves → the person's
+**personal code** appears on their screen once ("write it down") → their dashboard.
+
+**First time (district office):** sign in with the emailed code → name, area, office
+passphrase → in at once, and their own personal code is shown.
+
+**Every later sign-in:** email/SMS code → personal code → dashboard. An email that is
+already verified and approved never sees the request form again; only the code is asked.
+
+**Personal codes** (`backend/app/staffcode.py`):
+- One per approved person (ASHA, staff, doctor, coordinator), 8 characters shown as `XXXX-XXXX`, from an alphabet without look-alikes; unique across everyone.
+- Stored only as a keyed hash (HMAC-SHA256 with the server secret) with a unique index, so no two people can share one and nobody can read it from the database.
+- Shown in plain text once, on approval or after a reset; it is forgotten as soon as the person taps "I have written it down".
+- Permanent: it does not expire. Only the district office can replace it (People → Reset code), and the new one is shown at that person's next sign-in.
+- Wrong codes: 5 tries per 10 minutes per person, each wrong try is audited. Typing someone else's code fails, because the code is checked against the account that just proved its email.
+- The step between the email code and the personal code is a 10-minute "code-step" token; it opens nothing else.
+
+**Email/SMS code:** 6 digits, stored hashed, expires after 5 minutes, locked after 5 wrong tries, 60 seconds before a resend. Requests per IP per minute: 30 by default (many phones share one school Wi-Fi on a test day); `SAHYOG_LOGIN_CODES_PER_MINUTE` changes it.
+
+**Tokens:** access token 15 minutes, refresh token 7 days.
+
+**No group invite codes.** Everybody joins by request and approval, or (offices only) by the area passphrase.
+
+### People (district office)
+- The People list shows everyone approved in the district, whether they have a personal code, and two buttons: **Reset code** and **Switch off / on**.
+- Switching someone off ends their sign-ins; their records stay.
+
+### Two people acting at once
+- Moving a referral (accept, reject, arrival, consultation, outcome, close, escalate, re-route, ambulance steps) locks that referral's row first, so two staff tapping Accept together get one success and one "already moved" answer.
+- The last bed in a ward is booked under a lock on that ward: two ASHAs, one bed, one booking.
+- Tests for both run on PostgreSQL (`backend/tests/test_concurrency.py`).
 
 ### Access control
 Every request checks the role **and** the scope:

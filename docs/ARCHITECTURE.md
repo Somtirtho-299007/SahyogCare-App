@@ -45,8 +45,8 @@ Chosen for explicit typed request/response models, straightforward REST endpoint
 ### Database — PostgreSQL
 Chosen because the domain has strong relationships: one patient can have many encounters; an encounter can create referrals; referrals have state transitions and events; follow-ups belong to referrals/cases.
 
-### Authentication — JWT + RBAC
-Chosen for a simple authenticated MVP with clear role and facility boundaries. The four application roles are exactly: `WORKER`, `FACILITY_STAFF`, `DOCTOR`, and `COORDINATOR`.
+### Authentication — two factors, JWT + RBAC
+Sign-in is two steps: a one-time code sent to the person's email (or phone), then their **personal code**, a permanent 8-character code that only they know (shown once on approval, stored only as a keyed hash, unique per person, reset only by the district office). After both, the API issues a short-lived JWT access token and a refresh token. The four application roles are exactly: `WORKER`, `FACILITY_STAFF`, `DOCTOR`, and `COORDINATOR`; every endpoint checks role and area/facility scope. New people join by request and district-office approval; a district office joins with its area passphrase. See `WORKFLOW.md` §5 "Login".
 
 ### Offline Sync
 Writes made offline receive a client-generated idempotency key and local status. On reconnect, the client submits the queued operation. The server returns the canonical record and sync state.
@@ -145,7 +145,9 @@ Role permissions for these transitions are defined in `API_SPEC.md` and use the 
 
 - HTTPS in transit.
 - Passwords never stored directly; use a password hashing algorithm if local credentials are used.
+- Two-step sign-in: email/SMS one-time code, then the person's own personal code (hashed, unique, rate-limited, audited).
 - JWT access tokens with short expiry.
+- Row locks on referrals and ward beds, so simultaneous actions cannot both succeed.
 - Role and facility checks on every protected endpoint.
 - Audit event for sensitive workflow actions.
 - Minimum necessary patient fields.
