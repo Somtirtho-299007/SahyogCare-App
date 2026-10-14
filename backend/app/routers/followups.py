@@ -36,7 +36,7 @@ def _scope(user: User):
 
 
 def _item(db: Session, fu: FollowUp) -> FollowUpItemOut:
-    referral = db.get(Referral, fu.referral_id)
+    referral = db.get(Referral, fu.referral_id, with_for_update=True)
     patient = db.get(Patient, referral.patient_id)
     facility = db.get(Facility, referral.destination_facility_id)
     due = as_utc(fu.due_at)
@@ -81,7 +81,7 @@ def sent(follow_up_id: str, body: NoteIn | None = None,
     fu = _get(db, user, follow_up_id)
     if fu.status == "COMPLETED":
         raise ApiError(409, "ALREADY_COMPLETED", "The hospital has already confirmed this checkup.")
-    referral = db.get(Referral, fu.referral_id)
+    referral = db.get(Referral, fu.referral_id, with_for_update=True)
     patient = db.get(Patient, referral.patient_id)
     fu.sent_at = utcnow()
     note = f" Note: {body.note.strip()}" if body and body.note and body.note.strip() else ""
@@ -98,7 +98,7 @@ def complete(follow_up_id: str, body: NoteIn | None = None,
              db: Session = Depends(get_db)) -> FollowUpItemOut:
     """The hospital confirms the follow-up checkup happened: close the referral (late checkups count too)."""
     fu = _get(db, user, follow_up_id)
-    referral = db.get(Referral, fu.referral_id)
+    referral = db.get(Referral, fu.referral_id, with_for_update=True)
     move(db, referral, Status.CLOSED, user, note=(body.note if body else None) or "Follow-up checkup done")
     fu.status, fu.completed_at = "COMPLETED", utcnow()
     commit(db)
@@ -110,7 +110,7 @@ def miss(follow_up_id: str, body: NoteIn | None = None,
          user: User = Depends(require_roles(Role.WORKER)), db: Session = Depends(get_db)) -> FollowUpItemOut:
     """The patient could not go for the checkup: mark it overdue so the coordinator sees it."""
     fu = _get(db, user, follow_up_id)
-    referral = db.get(Referral, fu.referral_id)
+    referral = db.get(Referral, fu.referral_id, with_for_update=True)
     move(db, referral, Status.OVERDUE, user, note=(body.note if body else None) or "Patient could not go for the follow-up checkup")
     fu.status = "OVERDUE"
     commit(db)

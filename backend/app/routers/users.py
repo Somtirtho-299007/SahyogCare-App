@@ -12,9 +12,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app import staffcode
 from app.db import get_db
 from app.errors import ApiError
-from app.models import AuditLog, Facility, User
+from app.models import AuditLog, Facility, Notification, User
 from app.rules import Role
 from app.schemas import Email, UserOut
 from app.security import require_roles
@@ -42,6 +43,12 @@ class UserUpdateIn(BaseModel):
 
 class UserListOut(UserOut):
     is_active: bool
+    has_code: bool = False  # has a personal code (never the code itself)
+
+
+def _listed(user: User) -> UserListOut:
+    return UserListOut(**UserOut.model_validate(user).model_dump(), is_active=user.is_active,
+                       has_code=bool(user.code_hash))
 
 
 def _check_facility(db: Session, coordinator: User, role: str, facility_id: str | None) -> None:
@@ -67,7 +74,7 @@ def list_users(coordinator: User = Depends(require_roles(Role.COORDINATOR)),
                db: Session = Depends(get_db)) -> list[UserListOut]:
     users = db.scalars(select(User).where(func.lower(User.district) == coordinator.district.lower())
                        .order_by(User.role, User.name))
-    return [UserListOut.model_validate(u, from_attributes=True) for u in users]
+    return [_listed(u) for u in users]
 
 
 @router.post("", response_model=UserListOut, status_code=201)
@@ -82,7 +89,7 @@ def add_user(body: UserIn, coordinator: User = Depends(require_roles(Role.COORDI
     db.flush()
     db.add(AuditLog(actor_id=coordinator.id, action="USER_CREATED", target_type="user", target_id=user.id))
     commit(db)
-    return UserListOut.model_validate(user, from_attributes=True)
+    return _listed(user)
 
 
 @router.patch("/{user_id}", response_model=UserListOut)
@@ -100,4 +107,18 @@ def update_user(user_id: str, body: UserUpdateIn, coordinator: User = Depends(re
         user.is_active = body.is_active
     db.add(AuditLog(actor_id=coordinator.id, action="USER_UPDATED", target_type="user", target_id=user.id))
     commit(db)
-    return UserListOut.model_validate(user, from_attributes=True)
+    return _listed(user)
+
+
+@router.post("/{user_id}/reset-code", response_model=UserListOut)
+def reset_code(user_id: str, coordinator: User = Depends(require_roles(Role.COORDINATOR)),
+               db: Session = Depends(get_db)) -> UserListOut:
+    """Forgotten or leaked personal code: the old one stops working at once, and a new one
+    is shown on the person's own dashboard the next time they log in."""
+    user = _in_district(db, coordinator, user_id)
+    staffcode.clear(user)
+    db.add(Notification(user_id=user.id, referral_id=None, kind="CODE_RESET",
+                        message="Your personal code was reset by the district office. A new one is shown when you log in."))
+    db.add(AuditLog(actor_id=coordinator.id, action="PERSONAL_CODE_RESET", target_type="user", target_id=user.id))
+    commit(db)
+    return _listed(user)

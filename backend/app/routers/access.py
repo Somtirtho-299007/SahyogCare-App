@@ -32,7 +32,8 @@ HOSPITAL_ROLES = {Role.FACILITY_STAFF, Role.DOCTOR}
 
 
 class AccessRequestIn(BaseModel):
-    role: Literal["WORKER", "FACILITY_STAFF", "DOCTOR", "COORDINATOR"]
+    # The district office does not ask: it has its own door (app/routers/office.py).
+    role: Literal["WORKER", "FACILITY_STAFF", "DOCTOR"]
     name: str = Field(min_length=1, max_length=120)
     # The area the person works in; that area's coordinator decides. Defaults to their current one.
     district: str | None = Field(None, max_length=80)

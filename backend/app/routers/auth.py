@@ -1,6 +1,9 @@
 """Login with a one-time code sent by email, or by SMS to a mobile number when the
 SMS service is set up (SAHYOG_SMS_API_KEY). See docs/WORKFLOW.md, "Login".
 
+Approved people then type their own personal code (app/staffcode.py) as a second step,
+so an account cannot be opened with the email or phone alone.
+
 Anyone with a real email (or mobile number) can get a code. A first login creates the account,
 which waits for the coordinator's approval of the role the person asks for
 (see app/routers/access.py). Switched-off accounts get no code.
@@ -10,6 +13,7 @@ from fastapi import APIRouter, Depends, Request
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
+from app import staffcode
 from app.config import settings
 from app.db import get_db
 from app.emailer import send_login_code
@@ -18,9 +22,11 @@ from app.messaging import send_login_code_sms, sms_enabled
 from app.models import AuditLog, OtpCode, User
 from app.ratelimit import RateLimiter
 from app.rules import OTP_MAX_ATTEMPTS, OTP_REQUESTS_PER_MINUTE, OTP_RESEND_AFTER, OTP_VALID_FOR, Role
-from app.schemas import OtpRequestIn, OtpRequestOut, OtpVerifyIn, RefreshIn, TokensOut, UserOut
+from app.rules import PERSONAL_CODE_TRIES_PER_10_MIN
+from app.schemas import CodeLoginIn, MeOut, OtpRequestIn, OtpRequestOut, OtpVerifyIn, RefreshIn, TokensOut, UserOut
 from app.security import (
     access_token_for,
+    code_step_token_for,
     current_user_any,
     hash_otp,
     load_active_user,
@@ -36,7 +42,9 @@ router = APIRouter(tags=["auth"])
 GENERIC_SENT = "A login code has been sent to this email."
 GENERIC_SENT_SMS = "A login code has been sent by SMS to this number."
 # Stops one machine from making the server send emails to thousands of addresses.
-code_limiter = RateLimiter(OTP_REQUESTS_PER_MINUTE)
+code_limiter = RateLimiter(settings.login_codes_per_minute or OTP_REQUESTS_PER_MINUTE)
+# Wrong personal codes allowed per account per 10 minutes (stops guessing).
+personal_code_limiter = RateLimiter(PERSONAL_CODE_TRIES_PER_10_MIN, window_seconds=600)
 
 
 def _normalise(email: str) -> str:
@@ -81,7 +89,26 @@ def _tokens(user: User) -> TokensOut:
         refresh_token=refresh_token_for(user),
         expires_in=settings.access_token_minutes * 60,
         user=UserOut.model_validate(user),
+        new_code=user.pending_code,
     )
+
+
+def ensure_code(db: Session, user: User) -> None:
+    """Approved but no code yet (just approved, added by the office, or reset): make one now."""
+    if user.approved and user.is_active and not user.code_hash:
+        staffcode.issue(db, user)
+        db.add(AuditLog(actor_id=user.id, action="PERSONAL_CODE_ISSUED", target_type="user", target_id=user.id))
+
+
+def _finish_login(db: Session, user: User) -> TokensOut:
+    """After the email/phone code: approved people who know their code must type it next."""
+    if staffcode.needed_at_login(user):
+        db.commit()
+        return TokensOut(code_required=True, code_token=code_step_token_for(user))
+    ensure_code(db, user)
+    db.add(AuditLog(actor_id=user.id, action="LOGIN", target_type="user", target_id=user.id))
+    db.commit()
+    return _tokens(user)
 
 
 @router.post("/auth/otp/request", response_model=OtpRequestOut, status_code=202)
@@ -156,6 +183,19 @@ def verify_code(body: OtpVerifyIn, db: Session = Depends(get_db)) -> TokensOut:
     elif not user.is_active:
         db.commit()
         raise ApiError(401, "AUTH_REQUIRED", "This account is not active.")
+    return _finish_login(db, user)
+
+
+@router.post("/auth/code", response_model=TokensOut)
+def login_with_personal_code(body: CodeLoginIn, db: Session = Depends(get_db)) -> TokensOut:
+    """Second step for approved people: their own personal code."""
+    user = load_active_user(db, read_token(body.code_token, "code-step"))
+    personal_code_limiter.check(user.id)
+    if not staffcode.matches(user, body.code):
+        db.add(AuditLog(actor_id=user.id, action="PERSONAL_CODE_WRONG", target_type="user", target_id=user.id))
+        db.commit()
+        raise ApiError(400, "CODE_INVALID",
+                       "That is not your personal code. Check it, or ask your district office to reset it.")
     db.add(AuditLog(actor_id=user.id, action="LOGIN", target_type="user", target_id=user.id))
     db.commit()
     return _tokens(user)
@@ -173,6 +213,18 @@ def login_methods() -> dict[str, bool]:
     return {"email": True, "phone": phone_login_available()}
 
 
-@router.get("/me", response_model=UserOut)
-def me(user: User = Depends(current_user_any)) -> UserOut:
-    return UserOut.model_validate(user)
+@router.get("/me", response_model=MeOut)
+def me(user: User = Depends(current_user_any), db: Session = Depends(get_db)) -> MeOut:
+    # Approved while waiting on the sign-up screen: the personal code appears right away.
+    ensure_code(db, user)
+    db.commit()
+    return MeOut(**UserOut.model_validate(user).model_dump(), new_code=user.pending_code)
+
+
+@router.post("/me/code-seen", response_model=MeOut)
+def code_seen(user: User = Depends(current_user_any), db: Session = Depends(get_db)) -> MeOut:
+    """The person has written their code down: stop showing it (only the hash stays)."""
+    user.pending_code = None
+    db.add(AuditLog(actor_id=user.id, action="PERSONAL_CODE_NOTED", target_type="user", target_id=user.id))
+    db.commit()
+    return MeOut(**UserOut.model_validate(user).model_dump())

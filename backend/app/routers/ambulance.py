@@ -32,7 +32,7 @@ def _audit(db: Session, user: User, action: str, trip: AmbulanceTrip) -> None:
 def request_ambulance(referral_id: str, body: AmbulanceRequestIn,
                       user: User = Depends(require_roles(Role.WORKER, Role.COORDINATOR)),
                       db: Session = Depends(get_db)) -> ReferralOut:
-    referral = get_referral_for(db, user, referral_id)
+    referral = get_referral_for(db, user, referral_id, lock=True)
     if referral.status not in FETCHABLE:
         raise ApiError(409, "INVALID_STATE_TRANSITION", "An ambulance can only be requested before the patient arrives.",
                        {"current_status": referral.status})
@@ -58,7 +58,7 @@ def request_ambulance(referral_id: str, body: AmbulanceRequestIn,
 def dispatch(referral_id: str, body: AmbulanceDispatchIn,
              user: User = Depends(require_roles(Role.FACILITY_STAFF)),
              db: Session = Depends(get_db)) -> ReferralOut:
-    referral = get_referral_for(db, user, referral_id)
+    referral = get_referral_for(db, user, referral_id, lock=True)
     trip = ambulance.open_trip(db, referral)
     if trip is None or trip.status != AmbulanceStatus.REQUESTED:
         raise ApiError(409, "INVALID_STATE_TRANSITION", "No ambulance request is waiting for this referral.")
@@ -83,7 +83,7 @@ def dispatch(referral_id: str, body: AmbulanceDispatchIn,
 @router.post("/picked-up", response_model=ReferralOut)
 def picked_up(referral_id: str, user: User = Depends(require_roles(Role.FACILITY_STAFF, Role.WORKER)),
               db: Session = Depends(get_db)) -> ReferralOut:
-    referral = get_referral_for(db, user, referral_id)
+    referral = get_referral_for(db, user, referral_id, lock=True)
     trip = ambulance.open_trip(db, referral)
     if trip is None or trip.status != AmbulanceStatus.DISPATCHED:
         raise ApiError(409, "INVALID_STATE_TRANSITION", "No ambulance is on its way for this referral.")
@@ -97,7 +97,7 @@ def picked_up(referral_id: str, user: User = Depends(require_roles(Role.FACILITY
 def cancel(referral_id: str, body: AmbulanceCancelIn,
            user: User = Depends(require_roles(Role.WORKER, Role.FACILITY_STAFF, Role.COORDINATOR)),
            db: Session = Depends(get_db)) -> ReferralOut:
-    referral = get_referral_for(db, user, referral_id)
+    referral = get_referral_for(db, user, referral_id, lock=True)
     trip = ambulance.open_trip(db, referral)
     if trip is None:
         raise ApiError(409, "INVALID_STATE_TRANSITION", "No ambulance trip is open for this referral.")

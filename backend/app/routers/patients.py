@@ -167,7 +167,7 @@ def mark_deceased(patient_id: str, body: DeceasedIn,
                   user: User = Depends(require_roles(Role.WORKER, Role.DOCTOR, Role.FACILITY_STAFF, Role.COORDINATOR)),
                   db: Session = Depends(get_db)) -> Patient:
     """The patient died: stop every open referral at once, with cause and time of death."""
-    patient = get_patient_for(db, user, patient_id)
+    patient = get_patient_for(db, user, patient_id, lock=True)
     if patient.deceased_at is not None:
         raise ApiError(409, "ALREADY_RECORDED", "The death of this patient is already recorded.")
     if body.died_at > utcnow():

@@ -217,7 +217,7 @@ def reroute(
 ) -> ReferralOut:
     """Send the patient to another hospital. The old referral ends as REROUTED (or stays REJECTED),
     its bed and ambulance are released, and a new referral with a new code continues the journey."""
-    old = get_referral_for(db, user, referral_id)
+    old = get_referral_for(db, user, referral_id, lock=True)
     if rerouted_to(db, old) is not None:
         raise ApiError(409, "ALREADY_REROUTED", "This referral was already sent to another hospital.")
     if old.status not in REROUTABLE_STATUSES:
@@ -286,7 +286,7 @@ def rejection_reasons(_: User = Depends(current_user)) -> list[RejectionReasonOu
 @router.post("/referrals/{referral_id}/accept", response_model=ReferralOut)
 def accept(referral_id: str, body: NoteIn | None = None, user: User = Depends(current_user),
            db: Session = Depends(get_db)) -> ReferralOut:
-    referral = get_referral_for(db, user, referral_id)
+    referral = get_referral_for(db, user, referral_id, lock=True)
     move(db, referral, Status.ACCEPTED, user, note=body.note if body else None)
     set_service_availability(db, referral, "AVAILABLE", "Accepted a referral")
     commit(db)
@@ -299,7 +299,7 @@ def reject(referral_id: str, body: RejectIn, user: User = Depends(current_user),
     reason = RejectionReason(body.reason)
     if reason == RejectionReason.OTHER and not (body.note and body.note.strip()):
         raise ApiError(422, "VALIDATION_ERROR", "Please add a note explaining the reason.", {"fields": {"note": "Required"}})
-    referral = get_referral_for(db, user, referral_id)
+    referral = get_referral_for(db, user, referral_id, lock=True)
     move(db, referral, Status.REJECTED, user, note=body.note)
     referral.rejection_reason = reason
     if reason in MARKS_SERVICE_UNAVAILABLE:
@@ -318,7 +318,7 @@ def reject(referral_id: str, body: RejectIn, user: User = Depends(current_user),
 @router.post("/referrals/{referral_id}/arrival", response_model=ReferralOut)
 def arrival(referral_id: str, body: NoteIn | None = None, user: User = Depends(current_user),
             db: Session = Depends(get_db)) -> ReferralOut:
-    referral = get_referral_for(db, user, referral_id)
+    referral = get_referral_for(db, user, referral_id, lock=True)
     move(db, referral, Status.ARRIVAL_RECORDED, user, note=body.note if body else None)
     commit(db)
     return referral_out(db, referral)
@@ -327,7 +327,7 @@ def arrival(referral_id: str, body: NoteIn | None = None, user: User = Depends(c
 @router.post("/referrals/{referral_id}/consultation", response_model=ReferralOut)
 def consultation(referral_id: str, body: NoteIn | None = None, user: User = Depends(current_user),
                  db: Session = Depends(get_db)) -> ReferralOut:
-    referral = get_referral_for(db, user, referral_id)
+    referral = get_referral_for(db, user, referral_id, lock=True)
     move(db, referral, Status.CONSULTED, user, note=body.note if body else None)
     commit(db)
     return referral_out(db, referral)
@@ -337,7 +337,7 @@ def consultation(referral_id: str, body: NoteIn | None = None, user: User = Depe
 def outcome(referral_id: str, body: OutcomeIn | None = None, user: User = Depends(current_user),
             db: Session = Depends(get_db)) -> ReferralOut:
     body = body or OutcomeIn()
-    referral = get_referral_for(db, user, referral_id)
+    referral = get_referral_for(db, user, referral_id, lock=True)
     move(db, referral, Status.OUTCOME_RECORDED, user, note=body.note)
     # The server then hands the case back to the ASHA as a follow-up.
     referral.follow_up_days = body.follow_up_days
@@ -351,7 +351,7 @@ def outcome(referral_id: str, body: OutcomeIn | None = None, user: User = Depend
 @router.post("/referrals/{referral_id}/close", response_model=ReferralOut)
 def close(referral_id: str, body: NoteIn | None = None, user: User = Depends(current_user),
           db: Session = Depends(get_db)) -> ReferralOut:
-    referral = get_referral_for(db, user, referral_id)
+    referral = get_referral_for(db, user, referral_id, lock=True)
     move(db, referral, Status.CLOSED, user, note=body.note if body else None)
     for fu in db.scalars(select(FollowUp).where(FollowUp.referral_id == referral.id, FollowUp.status != "COMPLETED")):
         fu.status, fu.completed_at = "COMPLETED", utcnow()
@@ -363,7 +363,7 @@ def close(referral_id: str, body: NoteIn | None = None, user: User = Depends(cur
 def escalate(referral_id: str, body: NoteIn | None = None, user: User = Depends(current_user),
              db: Session = Depends(get_db)) -> ReferralOut:
     """Coordinator takes over an overdue follow-up."""
-    referral = get_referral_for(db, user, referral_id)
+    referral = get_referral_for(db, user, referral_id, lock=True)
     move(db, referral, Status.ESCALATED, user, note=body.note if body else None)
     for fu in db.scalars(select(FollowUp).where(FollowUp.referral_id == referral.id, FollowUp.status == "OVERDUE")):
         fu.status = "ESCALATED"
@@ -388,7 +388,7 @@ def verify_pass(body: PassVerifyIn, user: User = Depends(require_roles(Role.FACI
     data = read_pass(body.qr_text)
     if data["f"] != user.facility_id:
         raise ApiError(403, "PASS_WRONG_FACILITY", "This referral pass is for a different facility.")
-    referral = db.scalar(select(Referral).where(Referral.code == data["c"], Referral.destination_facility_id == user.facility_id))
+    referral = db.scalar(select(Referral).where(Referral.code == data["c"], Referral.destination_facility_id == user.facility_id).with_for_update())
     if referral is None:
         raise ApiError(404, "NOT_FOUND", "Referral not found.")
 
