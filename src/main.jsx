@@ -9,15 +9,18 @@ import {
   currentUser,
   refreshMe,
   logout,
-  lookupReferral,
   newKey,
+  patientApi,
+  patientLogout,
+  patientToken,
   qs,
   request,
 } from "./api.js";
 import {
   FlagChip,
-  PatientHealthPortal,
+  EmergencyPanel,
   PatientRecord,
+  PatientRecordView,
   PatientRegister,
   PhotoView,
   VitalsGrid,
@@ -97,7 +100,8 @@ function App() {
   const [session, setSession] = useState(() => {
     const user = currentUser();
     if (user) return { screen: SCREEN_FOR[user.role], user };
-    return readLS("sahyogcare_patient_mode") ? { screen: "patient", user: null } : null;
+    // A patient signed in to their own account on this phone.
+    return patientToken() ? { screen: "patient", user: null } : null;
   });
   const [toast, setToastState] = useState("");
   const toastTimer = useRef();
@@ -138,7 +142,6 @@ function App() {
       .catch(() => {});
   }, [userId]);
   const signIn = (s) => {
-    if (s.screen === "patient") writeLS("sahyogcare_patient_mode", "1");
     setSession(s);
     if (s.user && s.user.approved !== false) setToast(`${t(s.screen)} · ${s.user.name}`);
   };
@@ -152,7 +155,7 @@ function App() {
       /* storage unavailable */
     }
     logout();
-    writeLS("sahyogcare_patient_mode", "");
+    patientLogout();
     setSession(null);
   };
   if (!session)
@@ -204,7 +207,7 @@ function App() {
       </header>
       <main className="page page-fade" key={session.screen}>
         {session.screen === "asha" && <AshaDashboard toast={setToast} />}
-        {session.screen === "patient" && <PatientDashboard toast={setToast} />}
+        {session.screen === "patient" && <PatientHome toast={setToast} onSignOut={signOut} />}
         {session.screen === "medical" && <MedicalDashboard user={session.user} toast={setToast} />}
         {session.screen === "coordinator" && <CoordinatorDashboard user={session.user} toast={setToast} />}
       </main>
@@ -1418,133 +1421,135 @@ function VitalsPanel({ patient, referral, toast }) {
   );
 }
 
-// ---------- Patient (no login) ----------
+// ---------- Patient: their own account ----------
 
-function PatientDashboard({ toast }) {
+// Everything of the signed-in patient: their referrals (open ones first, with the journey,
+// the hospital and the ambulance), their health record, and the night emergency button.
+// There is no lookup by referral code: the patient signs in with their own mobile number.
+function PatientHome({ toast, onSignOut }) {
   const { t } = useLanguage();
-  const [ptab, setPtab] = usePersisted("sahyog_patient_tab", "health"); // health | track
-  const [code, setCode] = usePersisted("sahyog_patient_code", "");
-  const [last4, setLast4] = usePersisted("sahyog_patient_last4", "");
-  const [result, setResult] = useState(null);
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-  const lookup = async (c = code, l = last4) => {
-    if (!c.trim() || l.length !== 4) return;
-    setBusy(true);
-    setError("");
+  const [tab, setTab] = usePersisted("sahyog_patient_tab", "referrals"); // referrals | health
+  const [refs, setRefs] = useState(null);
+  const [record, setRecord] = useState(null);
+  const [emergency, setEmergency] = useState(false);
+  const signOutRef = useRef(onSignOut);
+  signOutRef.current = onSignOut;
+  const load = useCallback(async () => {
     try {
-      setResult(await lookupReferral(c.trim().toUpperCase(), l));
-    } catch (err) {
-      setResult(null);
-      setError(errorText(t, err));
-    } finally {
-      setBusy(false);
+      const [mine, rec] = await Promise.all([patientApi.get("/public/me/referrals"), patientApi.get("/public/me/record")]);
+      setRefs(mine);
+      setRecord(rec);
+    } catch (e) {
+      if (e.status === 401) signOutRef.current();
+      else toast(errorText(t, e));
     }
-  };
-  const find = (e) => {
-    e.preventDefault();
-    if (!busy) lookup();
-  };
-  // After a refresh, show the last referral looked up on this phone again.
-  useEffect(() => {
-    if (code && last4.length === 4) lookup();
-  }, []);
-  const status = result ? statusText(t, result.status) : "";
+  }, [toast]);
+  usePolling(load);
+  const open = (refs || []).filter((r) => r.is_open);
+  const past = (refs || []).filter((r) => !r.is_open);
+  const alive = record && !record.patient.deceased_at;
   return (
-    <Dashboard title={t("patientDashboard")} subtitle={t("patientSub")}>
+    <Dashboard
+      title={record ? `${t("hello")}, ${record.patient.name}` : t("patientDashboard")}
+      subtitle={t("patientAccountSub")}
+    >
+      {alive && (
+        <button className="sos-btn" data-tour="sos" onClick={() => setEmergency(true)}>
+          <span>🚨</span>
+          <b>{t("emergencyNow")}</b>
+          <small>{t("emergencyNowSub")}</small>
+        </button>
+      )}
+      {emergency && createPortal(<EmergencyPanel onClose={() => (setEmergency(false), load())} />, document.body)}
       <div className="view-tabs" role="tablist">
-        <button role="tab" aria-selected={ptab === "health"} className={ptab === "health" ? "tab active" : "tab"} onClick={() => setPtab("health")}>
+        <button role="tab" aria-selected={tab === "referrals"} className={tab === "referrals" ? "tab active" : "tab"} onClick={() => setTab("referrals")}>
+          ➜ {t("myReferralsTab")}
+          {open.length ? ` · ${open.length}` : ""}
+        </button>
+        <button role="tab" aria-selected={tab === "health"} className={tab === "health" ? "tab active" : "tab"} onClick={() => setTab("health")}>
           ♡ {t("myHealth")}
         </button>
-        <button role="tab" aria-selected={ptab === "track"} className={ptab === "track" ? "tab active" : "tab"} onClick={() => setPtab("track")}>
-          ➜ {t("trackReferral")}
-        </button>
       </div>
-      {ptab === "health" && <PatientHealthPortal toast={toast} />}
-      {ptab === "track" && (
-      <>
-      <div className="stats">
-        <Stat
-          tour="stats"
-          label={t("myContinuity")}
-          value={result?.code || "—"}
-          meta={result ? t("activeJourney") : t("waitingReferral")}
-        />
-        <Stat
-          label={t("destination")}
-          value={result?.facility_name?.split(" ")[0] || "—"}
-          meta={result?.facility_name || t("noFacilityYet")}
-        />
-        <Stat label={t("currentStatus")} value={status || t("notStarted")} meta={t("updatedShared")} />
-      </div>
-      <section className="feature-grid">
-        <div className="panel wide">
-          <div className="panel-head">
-            <div>
-              <p className="eyebrow">{t("trackReferral")}</p>
-              <h3>{t("referralPass")}</h3>
-            </div>
-            <span className="status-badge">{status || t("noReferralShort")}</span>
-          </div>
-          <form className="lookup" data-tour="token" onSubmit={find}>
-            <input
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-              placeholder={`${t("referralCode")} (SC-7K3M9Q)`}
-              autoCapitalize="characters"
-            />
-            <input
-              value={last4}
-              onChange={(e) => setLast4(e.target.value.replace(/\D/g, "").slice(0, 4))}
-              placeholder={t("phoneLast4")}
-              inputMode="numeric"
-              style={{ maxWidth: 170 }}
-            />
-            <button type="submit" className="secondary-btn" disabled={busy}>
-              {t("find")}
-            </button>
-          </form>
-          {result ? (
-            <div data-tour="journey" className="reveal">
-              {result.rerouted_to_code ? (
-                <div className="notice good">
-                  <b>
-                    {t("youWereSentTo")} {result.rerouted_to_facility}. {t("yourNewCode")}: {result.rerouted_to_code}
-                  </b>
-                  <button
-                    className="secondary-btn"
-                    onClick={() => (setCode(result.rerouted_to_code), lookup(result.rerouted_to_code, last4))}
-                  >
-                    {t("trackNew")}
-                  </button>
-                </div>
-              ) : result.status === "REJECTED" ? (
-                <Empty title={status} text={t("referralRejected")} />
-              ) : (
-                <PatientJourney status={result.status} />
-              )}
-              {result.ambulance && <AmbulanceInfo amb={result.ambulance} />}
-            </div>
+      {tab === "referrals" && (
+        <section className="panel" data-tour="journey">
+          {refs === null ? (
+            <Skeleton />
+          ) : open.length === 0 ? (
+            <Empty title={t("noOpenReferral")} text={t("noOpenReferralSub")} />
           ) : (
-            <Empty title={error || t("noReferral")} text={t("askToken")} />
+            open.map((r) => <MyReferralCard key={r.id} r={r} />)
           )}
-        </div>
-        <div className="panel">
-          <p className="eyebrow">{t("checklist")}</p>
-          <h3>{t("beforeTravel")}</h3>
-          <ul className="checklist">
-            <li>{t("carryToken")}</li>
-            <li>{t("medicines")}</li>
-            <li>{t("phoneReach")}</li>
-            <li>{t("showJourney")}</li>
-          </ul>
-        </div>
-      </section>
-      </>
+          {past.length > 0 && (
+            <details className="finished past-referrals">
+              <summary>
+                {t("pastReferrals")} ({past.length})
+              </summary>
+              {past.map((r) => (
+                <div className="mini-ref" key={r.id}>
+                  <b>{r.facility_name}</b>
+                  <span>
+                    {serviceText(t, r.requested_service)} · {r.reason}
+                  </span>
+                  <small>
+                    {statusText(t, r.status)}
+                    {r.rerouted_to_facility ? ` → ${r.rerouted_to_facility}` : ""} · {new Date(r.created_at).toLocaleDateString()}
+                  </small>
+                </div>
+              ))}
+            </details>
+          )}
+        </section>
+      )}
+      {tab === "health" && (
+        <section className="panel">{record ? <PatientRecordView record={record} role="PATIENT" reload={load} toast={toast} /> : <Skeleton />}</section>
       )}
       <EmergencyBox />
-      <ESanjeevaniCard toast={toast} summary={result ? `SahyogCare ${result.code} → ${result.facility_name}.` : ""} />
+      <ESanjeevaniCard
+        toast={toast}
+        summary={record ? `${record.patient.name}, ${record.patient.age} ${t("yearsShort")}. ${open[0] ? `SahyogCare ${open[0].code} → ${open[0].facility_name}.` : ""}` : ""}
+      />
     </Dashboard>
+  );
+}
+
+// One open referral as its patient sees it: where it stands and what to do.
+function MyReferralCard({ r }) {
+  const { t } = useLanguage();
+  return (
+    <div className="my-ref reveal">
+      <div className="my-ref-head">
+        <div>
+          <p className="eyebrow">{serviceText(t, r.requested_service)}</p>
+          <h3>{r.facility_name}</h3>
+          <p className="muted">{r.reason}</p>
+        </div>
+        <span className={`urgency ${r.triage.toLowerCase()}`}>{t(TRIAGE_KEY[r.triage])}</span>
+      </div>
+      {r.status === "REJECTED" ? <Empty title={statusText(t, r.status)} text={t("referralRejected")} /> : <PatientJourney status={r.status} />}
+      {r.follow_up_due && (
+        <p className="notice good">
+          <b>{t("followUpDue")}:</b> {new Date(r.follow_up_due).toLocaleDateString()}
+        </p>
+      )}
+      <AmbulanceInfo amb={r.ambulance} />
+      <div className="my-ref-actions">
+        {r.facility_phone && (
+          <a className="secondary-btn" href={`tel:${r.facility_phone}`}>
+            📞 {t("callHospital")}
+          </a>
+        )}
+        <span className="desk-code">
+          {t("showAtDesk")}: <b>{r.code}</b>
+        </span>
+      </div>
+      {["CREATED", "ACCEPTED"].includes(r.status) && (
+        <ul className="checklist">
+          <li>{t("medicines")}</li>
+          <li>{t("phoneReach")}</li>
+          <li>{t("showJourney")}</li>
+        </ul>
+      )}
+    </div>
   );
 }
 

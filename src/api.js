@@ -141,19 +141,29 @@ export async function refreshMe() {
 
 export const getDistricts = () => send("GET", "/public/districts");
 
-export const lookupReferral = (code, phoneLast4) =>
-  send("POST", "/public/referral-status", { code, phone_last4: phoneLast4 });
-
-// ---------- the patient's own sign-in (Health ID + last 4 phone digits) ----------
+// ---------- the patient's own account (registered mobile or email + one-time code) ----------
 
 const PATIENT_KEY = "sahyog_patient_token";
 export const patientToken = () => readLS(PATIENT_KEY);
 export const patientLogout = () => removeLS(PATIENT_KEY);
 
-export async function patientLogin(code, phoneLast4) {
-  const t = await send("POST", "/public/patient-login", { code, phone_last4: phoneLast4 });
+// Returns { channel: "sms" | "email" | "asha", dev_code? }. "asha": ask the ASHA for a code.
+export const patientRequestCode = (who) => send("POST", "/public/login/request", identity(who));
+
+// Returns { patient } when signed in, or { people, chooseToken } when a family shares the phone.
+export async function patientVerify(who, code) {
+  const r = await send("POST", "/public/login/verify", { ...identity(who), code });
+  if (r.signed_in) {
+    writeLS(PATIENT_KEY, r.signed_in.token);
+    return { patient: r.signed_in };
+  }
+  return { people: r.people, chooseToken: r.choose_token };
+}
+
+export async function patientChoose(chooseToken, patientId) {
+  const t = await send("POST", "/public/login/choose", { choose_token: chooseToken, patient_id: patientId });
   writeLS(PATIENT_KEY, t.token);
-  return t;
+  return { patient: t };
 }
 
 export const patientApi = {

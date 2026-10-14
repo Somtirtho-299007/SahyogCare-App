@@ -8,6 +8,9 @@ import {
   loginMethods,
   loginWithPersonalCode,
   markCodeSeen,
+  patientChoose,
+  patientRequestCode,
+  patientVerify,
   qs,
   refreshMe,
   requestCode,
@@ -15,18 +18,15 @@ import {
   verifyCode,
 } from "./api.js";
 import { PhotoPicker, PhotoView } from "./health.jsx";
-import { errorText, readLS, useLanguage, writeLS } from "./i18n.jsx";
+import { LANGUAGES, errorText, readLS, useLanguage, writeLS } from "./i18n.jsx";
 import { Empty, Skeleton } from "./ui.jsx";
 
 const isEmail = (x) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(x.trim());
 const isMobile = (x) => /^[6-9]\d{9}$/.test(x.trim());
 const DOOR_KEY = "sahyog_door"; // which door the person came in by: worker | office
 export const SCREEN_FOR = { WORKER: "asha", FACILITY_STAFF: "medical", DOCTOR: "medical", COORDINATOR: "coordinator" };
-const QUICK_LANGS = [
-  ["bn", "বাংলা"],
-  ["hi", "हिन्दी"],
-  ["en", "English"],
-];
+// Every language the app speaks, each in its own script, right on the start screen.
+const QUICK_LANGS = [...LANGUAGES.filter(([k]) => k !== "en"), LANGUAGES.find(([k]) => k === "en")].map(([k, , native]) => [k, native]);
 
 // Personal code as typed: capitals, a dash after 4 characters.
 const formatCode = (v) => {
@@ -49,7 +49,7 @@ function Brand() {
 
 export function EntryScreen({ onSignIn, onTour }) {
   const { t, language, setLanguage } = useLanguage();
-  const [step, setStep] = useState("door"); // door | id | otp | code
+  const [step, setStep] = useState("door"); // door | id | otp | code | pick (patients sharing a phone)
   const [door, setDoor] = useState(readLS(DOOR_KEY) || "worker");
   const [who, setWho] = useState("");
   const [otp, setOtp] = useState("");
@@ -57,6 +57,9 @@ export function EntryScreen({ onSignIn, onTour }) {
   const [codeToken, setCodeToken] = useState("");
   const [devOtp, setDevOtp] = useState("");
   const [phoneOk, setPhoneOk] = useState(false);
+  const [channel, setChannel] = useState(""); // patients: sms | email | asha
+  const [people, setPeople] = useState([]); // patients: a family on one phone
+  const [chooseToken, setChooseToken] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   useEffect(() => {
@@ -68,19 +71,21 @@ export function EntryScreen({ onSignIn, onTour }) {
     setError("");
     setStep(next);
   };
+  const patientDoor = door === "patient";
   const choose = (d) => {
-    if (d === "patient") return onSignIn({ screen: "patient", user: null });
     setDoor(d);
     writeLS(DOOR_KEY, d);
     go("id");
   };
-  const validId = isEmail(who) || (phoneOk && isMobile(who));
+  // Patients sign in with the mobile their ASHA registered (or an email on their record).
+  const validId = isEmail(who) || ((phoneOk || patientDoor) && isMobile(who));
   const send = async () => {
     if (!validId || busy) return;
     setBusy(true);
     setError("");
     try {
-      const r = await requestCode(who.trim());
+      const r = patientDoor ? await patientRequestCode(who.trim()) : await requestCode(who.trim());
+      setChannel(r.channel || "");
       setDevOtp(r.dev_code || "");
       setOtp("");
       go("otp");
@@ -96,6 +101,13 @@ export function EntryScreen({ onSignIn, onTour }) {
     setBusy(true);
     setError("");
     try {
+      if (patientDoor) {
+        const p = await patientVerify(who.trim(), otp);
+        if (p.patient) return onSignIn({ screen: "patient", user: null });
+        setPeople(p.people);
+        setChooseToken(p.chooseToken);
+        return go("pick");
+      }
       const r = await verifyCode(who.trim(), otp);
       if (r.codeRequired) {
         setCodeToken(r.codeToken);
@@ -123,7 +135,21 @@ export function EntryScreen({ onSignIn, onTour }) {
       setBusy(false);
     }
   };
-  const doorName = door === "office" ? t("doorOffice") : t("doorWorker");
+  const pick = async (id) => {
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      await patientChoose(chooseToken, id);
+      onSignIn({ screen: "patient", user: null });
+    } catch (e) {
+      setError(errorText(t, e));
+      go("id");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const doorName = door === "office" ? t("doorOffice") : patientDoor ? t("doorPatient") : t("doorWorker");
 
   return (
     <div className="entry">
@@ -172,17 +198,18 @@ export function EntryScreen({ onSignIn, onTour }) {
         {step === "id" && (
           <div className="reveal">
             <p className="entry-step">{doorName}</p>
-            <h1 className="entry-title">{phoneOk ? t("yourEmailOrMobile") : t("yourEmail")}</h1>
+            <h1 className="entry-title">{patientDoor ? t("patientMobileTitle") : phoneOk ? t("yourEmailOrMobile") : t("yourEmail")}</h1>
+            {patientDoor && <p className="muted">{t("patientMobileHelp")}</p>}
             <input
               className="big-input"
               data-tour="email"
               value={who}
               onChange={(e) => setWho(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && send()}
-              placeholder={phoneOk ? "you@gmail.com / 98XXXXXXXX" : "you@gmail.com"}
-              type={phoneOk ? "text" : "email"}
-              inputMode={phoneOk ? "text" : "email"}
-              autoComplete={phoneOk ? "username" : "email"}
+              placeholder={patientDoor ? "98XXXXXXXX" : phoneOk ? "you@gmail.com / 98XXXXXXXX" : "you@gmail.com"}
+              type={phoneOk || patientDoor ? "text" : "email"}
+              inputMode={patientDoor ? "tel" : phoneOk ? "text" : "email"}
+              autoComplete={phoneOk || patientDoor ? "username" : "email"}
               autoFocus
             />
             <button className="primary-btn big-btn" onClick={send} disabled={!validId || busy}>
@@ -198,9 +225,16 @@ export function EntryScreen({ onSignIn, onTour }) {
           <div className="reveal">
             <p className="entry-step">{doorName}</p>
             <h1 className="entry-title">{t("enterOtp")}</h1>
-            <p className="muted">
-              {t("otpSentTo")} <b>{who.trim()}</b>
-            </p>
+            {channel === "asha" ? (
+              <div className="asha-code-note">
+                <b>{t("askAshaForCode")}</b>
+                <span>{t("askAshaForCodeHow")}</span>
+              </div>
+            ) : (
+              <p className="muted">
+                {t("otpSentTo")} <b>{who.trim()}</b>
+              </p>
+            )}
             <input
               className="big-input otp-big"
               value={otp}
@@ -222,6 +256,26 @@ export function EntryScreen({ onSignIn, onTour }) {
             <button className="link-btn" onClick={() => go("id")}>
               ← {t("changeEmail")}
             </button>
+          </div>
+        )}
+
+        {step === "pick" && (
+          <div className="reveal">
+            <p className="entry-step">{doorName}</p>
+            <h1 className="entry-title">{t("whoIsSigningIn")}</h1>
+            <p className="muted">{t("whoIsSigningInHelp")}</p>
+            {people.map((p) => (
+              <button key={p.id} className="door" onClick={() => pick(p.id)} disabled={busy}>
+                <span className="door-icon">♡</span>
+                <span>
+                  <b>{p.name}</b>
+                  <small>
+                    {p.age} {t("yearsShort")}
+                    {p.sex ? ` · ${t(`sex_${p.sex}`)}` : ""}
+                  </small>
+                </span>
+              </button>
+            ))}
           </div>
         )}
 

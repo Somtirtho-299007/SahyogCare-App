@@ -8,7 +8,7 @@ const replay = step("help", "replay");
 export const TOURS = {
   auth: [step(null, "welcome"), step("doors", "doors"), step("language", "language")],
   asha: [step("stats", "ashaStats"), step("intake", "ashaIntake"), step("continuity", "ashaContinuity"), step("vitals", "ashaVitals"), replay],
-  patient: [step("token", "patientToken"), step("journey", "patientJourney"), step("consult", "patientConsult"), replay],
+  patient: [step("sos", "patientSos"), step("journey", "patientJourney"), step("consult", "patientConsult"), replay],
   coordinator: [step("requests", "coordRequests"), step("people", "coordPeople"), step("beds", "coordBeds"), replay],
   medical: [step("stats", "medStats"), step("filters", "medFilters"), step("queue", "medQueue"), replay],
 };

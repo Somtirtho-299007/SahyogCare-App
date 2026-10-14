@@ -2,7 +2,8 @@
 // vitals with normal ranges, recording a death — and the patient's own portal with
 // the night emergency button.
 import React, { useCallback, useEffect, useState } from "react";
-import { api, patientApi, patientLogin, patientLogout, patientToken, photoUrl, uploadPhoto } from "./api.js";
+import { createPortal } from "react-dom";
+import { api, patientApi, photoUrl, uploadPhoto } from "./api.js";
 import { errorText, useLanguage } from "./i18n.jsx";
 import { Empty, Field, Skeleton } from "./ui.jsx";
 
@@ -722,6 +723,18 @@ export function PatientRecordView({ record, role, reload, toast, onReferral, onC
       toast(errorText(t, e));
     }
   };
+  // For places without SMS: a one-time code the patient types on their own phone.
+  const [signInCode, setSignInCode] = useState(null);
+  const showSignInCode = async () => {
+    setBusy(true);
+    try {
+      setSignInCode(await api.post(`/patients/${p.id}/sign-in-code`));
+    } catch (e) {
+      toast(errorText(t, e));
+    } finally {
+      setBusy(false);
+    }
+  };
   const addPhoto = async (file) => {
     setBusy(true);
     try {
@@ -748,7 +761,7 @@ export function PatientRecordView({ record, role, reload, toast, onReferral, onC
           </p>
           <p className="health-id">
             {t("healthId")} <b>{p.health_id}</b>
-            {asha && <small> — {t("giveHealthId")}</small>}
+
           </p>
           {record.asha_name && !asha && <p className="muted">{t("roleAsha")}: {record.asha_name}</p>}
           {!alive && <p className="death-note">{t("cause")}: {p.death_cause}</p>}
@@ -791,6 +804,9 @@ export function PatientRecordView({ record, role, reload, toast, onReferral, onC
                 ✎ {t("editDetails")}
               </button>
               <PhotoPicker label={p.photo_id ? t("newPhoto") : t("addPhoto")} onFile={addPhoto} busy={busy} />
+              <button className="link-btn" onClick={showSignInCode} disabled={busy}>
+                🔑 {t("signInCodeBtn")}
+              </button>
             </>
           )}
           <button className="link-btn danger-link" onClick={() => setOpen(open === "death" ? "" : "death")}>
@@ -798,6 +814,27 @@ export function PatientRecordView({ record, role, reload, toast, onReferral, onC
           </button>
         </div>
       )}
+      {signInCode &&
+        createPortal(
+        <div className="consult-modal" role="dialog" aria-modal="true" onClick={(e) => e.target === e.currentTarget && setSignInCode(null)}>
+          <div className="consult-modal-card new-code-card">
+            <p className="eyebrow">{p.name}</p>
+            <h3>{t("signInCodeTitle")}</h3>
+            <div className="code-display">{signInCode.code}</div>
+            <ul className="code-rules">
+              <li>
+                {t("signInCodeStep1")} <b>{signInCode.phone}</b>
+              </li>
+              <li>{t("signInCodeStep2")}</li>
+              <li>{t("signInCodeValid")}</li>
+            </ul>
+            <button className="primary-btn big-btn" onClick={() => setSignInCode(null)}>
+              {t("done")}
+            </button>
+          </div>
+        </div>,
+          document.body,
+        )}
       {open === "visit" && <VitalsForm patientId={p.id} kind="HOME_VISIT" reasonDefault={t("routineVisitOk")} onSaved={done} onCancel={() => setOpen("")} toast={toast} />}
       {open === "vitals" && (
         <VitalsForm patientId={p.id} kind="VITALS_UPDATE" referralId={referralId} reasonDefault={hospital ? t("afterCheckup") : t("newReadings")} onSaved={done} onCancel={() => setOpen("")} toast={toast} />
@@ -815,7 +852,7 @@ export function PatientRecordView({ record, role, reload, toast, onReferral, onC
       )}
 
       <div className="tabs" role="tablist">
-        {TABS.map(([k, l]) => (
+        {TABS.filter(([k]) => !(asPatient && k === "referrals")).map(([k, l]) => (
           <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? "tab active" : "tab"} onClick={() => setTab(k)}>
             {t(l)}
           </button>
@@ -1063,83 +1100,7 @@ export function PatientRegister({ toast, onReferral, selectedId, onSelect }) {
   );
 }
 
-// ---------- the patient's own page: health record and night emergency ----------
-
-export function PatientHealthPortal({ toast }) {
-  const { t } = useLanguage();
-  const [signedIn, setSignedIn] = useState(!!patientToken());
-  const [code, setCode] = useState("");
-  const [last4, setLast4] = useState("");
-  const [record, setRecord] = useState(null);
-  const [error, setError] = useState("");
-  const [emergency, setEmergency] = useState(false);
-  const load = useCallback(() => {
-    patientApi
-      .get("/public/me/record")
-      .then(setRecord)
-      .catch((e) => {
-        if (e.status === 401) {
-          patientLogout();
-          setSignedIn(false);
-        } else toast(errorText(t, e));
-      });
-  }, []);
-  useEffect(() => {
-    if (signedIn) load();
-  }, [signedIn, load]);
-  const login = async (e) => {
-    e.preventDefault();
-    setError("");
-    try {
-      await patientLogin(code.trim().toUpperCase(), last4);
-      setSignedIn(true);
-    } catch (err) {
-      setError(errorText(t, err));
-    }
-  };
-  if (!signedIn)
-    return (
-      <div className="panel">
-        <p className="eyebrow">{t("myHealth")}</p>
-        <h3>{t("myHealthTitle")}</h3>
-        <p className="muted">{t("myHealthHelp")}</p>
-        <form className="lookup" onSubmit={login}>
-          <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="HID-XXXXXX" autoCapitalize="characters" aria-label={t("healthId")} />
-          <input value={last4} onChange={(e) => setLast4(e.target.value.replace(/\D/g, "").slice(0, 4))} placeholder={t("phoneLast4")} inputMode="numeric" style={{ maxWidth: 170 }} />
-          <button className="primary-btn" type="submit" disabled={!code.trim() || last4.length !== 4}>
-            {t("open")}
-          </button>
-        </form>
-        {error && <p className="error-text">{error}</p>}
-        <div className="emergency-hint">
-          🚨 {t("emergencyNeedsId")} <a href="tel:108">108</a>
-        </div>
-      </div>
-    );
-  return (
-    <div className="portal">
-      <button className="sos-btn" onClick={() => setEmergency(true)}>
-        <span>🚨</span>
-        <b>{t("emergencyNow")}</b>
-        <small>{t("emergencyNowSub")}</small>
-      </button>
-      {emergency && <EmergencyPanel onClose={() => (setEmergency(false), load())} />}
-      <div className="panel">
-        {record ? <PatientRecordView record={record} role="PATIENT" reload={load} toast={toast} /> : <Skeleton />}
-        <button
-          className="link-btn"
-          onClick={() => {
-            patientLogout();
-            setSignedIn(false);
-            setRecord(null);
-          }}
-        >
-          {t("signOut")}
-        </button>
-      </div>
-    </div>
-  );
-}
+// ---------- the patient's night emergency ----------
 
 export function EmergencyPanel({ onClose }) {
   const { t } = useLanguage();

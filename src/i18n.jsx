@@ -1,6 +1,10 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { WORDS_A } from "./lang/words-a.js";
 import { WORDS_B } from "./lang/words-b.js";
+import { MR } from "./lang/mr.js";
+import { GU } from "./lang/gu.js";
+import { TA } from "./lang/ta.js";
+import { TE } from "./lang/te.js";
 
 export function readLS(k) {
   try {
@@ -20,30 +24,16 @@ export function removeLS(k) {
   } catch {}
 }
 
+// The languages the app speaks fully. Each one has every screen translated; anything
+// missing falls back to English. Add a language by adding a file in lang/ and a line here.
 export const LANGUAGES = [
   ["en", "English", "English"],
-  ["as", "Assamese", "অসমীয়া"],
   ["bn", "Bengali", "বাংলা"],
-  ["brx", "Bodo", "बड़ो"],
-  ["doi", "Dogri", "डोगरी"],
-  ["gu", "Gujarati", "ગુજરાતી"],
   ["hi", "Hindi", "हिन्दी"],
-  ["kn", "Kannada", "ಕನ್ನಡ"],
-  ["ks", "Kashmiri", "कॉशुर"],
-  ["kok", "Konkani", "कोंकणी"],
-  ["mai", "Maithili", "मैथिली"],
-  ["ml", "Malayalam", "മലയാളം"],
-  ["mni", "Manipuri", "মৈতৈলোন্"],
   ["mr", "Marathi", "मराठी"],
-  ["ne", "Nepali", "नेपाली"],
-  ["or", "Odia", "ଓଡ଼ିଆ"],
-  ["pa", "Punjabi", "ਪੰਜਾਬੀ"],
-  ["sa", "Sanskrit", "संस्कृतम्"],
-  ["sat", "Santali", "ᱥᱟᱱᱛᱟᱲᱤ"],
-  ["sd", "Sindhi", "سنڌي"],
+  ["gu", "Gujarati", "ગુજરાતી"],
   ["ta", "Tamil", "தமிழ்"],
   ["te", "Telugu", "తెలుగు"],
-  ["ur", "Urdu", "اردو"],
 ];
 export const EN = {
   workspace: "SahyogCare workspace",
@@ -431,143 +421,10 @@ export const LOCAL = {
     followUpSentToast: "हो गया। अस्पताल को मरीज़ के आने की सूचना दे दी गई है।",
     checkupDone: "जांच पूरी",
   },
-  gu: {
-    language: "ભાષા",
-    selectLanguage: "ભાષા પસંદ કરો",
-    patient: "દર્દી",
-    asha: "આશા / ANM",
-    medical: "મેડિકલ ટીમ",
-    signOut: "સાઇન આઉટ",
-    vitalsTitle: "દર્દીના વાઇટલ્સ અને દવાઓ",
-    bloodPressure: "બ્લડ પ્રેશર",
-    temperature: "તાપમાન",
-    pulse: "પલ્સ / હાર્ટ રેટ",
-    spo2: "SpO₂",
-    updateVitals: "દર્દી રેકોર્ડ અપડેટ કરો",
-    medicinesTitle: "ચાલુ દવાઓ",
-    addMedicine: "દવા ઉમેરો",
-    teleconsultTitle: "ડૉક્ટર સાથે વાત કરો",
-    startConsult: "કન્સલ્ટેશન શરૂ કરો",
-  },
-  mr: {
-    language: "भाषा",
-    selectLanguage: "भाषा निवडा",
-    patient: "रुग्ण",
-    asha: "आशा / ANM",
-    medical: "वैद्यकीय टीम",
-    vitalsTitle: "रुग्णाचे व्हायटल्स आणि औषधे",
-    bloodPressure: "रक्तदाब",
-    temperature: "तापमान",
-    pulse: "नाडी / हृदयगती",
-    spo2: "SpO₂",
-    updateVitals: "रुग्ण नोंद अपडेट करा",
-    medicinesTitle: "सुरू असलेली औषधे",
-    addMedicine: "औषध जोडा",
-    teleconsultTitle: "डॉक्टरांशी बोला",
-    startConsult: "कन्सल्टेशन सुरू करा",
-  },
-  ta: {
-    language: "மொழி",
-    selectLanguage: "மொழியைத் தேர்ந்தெடுக்கவும்",
-    patient: "நோயாளர்",
-    asha: "ஆஷா / ANM",
-    medical: "மருத்துவக் குழு",
-    vitalsTitle: "நோயாளர் உயிரளவுகள் மற்றும் மருந்துகள்",
-    bloodPressure: "இரத்த அழுத்தம்",
-    temperature: "வெப்பநிலை",
-    pulse: "துடிப்பு / இதயத் துடிப்பு",
-    spo2: "SpO₂",
-    updateVitals: "நோயாளர் பதிவைப் புதுப்பிக்கவும்",
-    medicinesTitle: "தொடரும் மருந்துகள்",
-    addMedicine: "மருந்து சேர்க்கவும்",
-    teleconsultTitle: "மருத்துவருடன் பேசுங்கள்",
-    startConsult: "ஆலோசனையைத் தொடங்கவும்",
-  },
-  te: {
-    language: "భాష",
-    selectLanguage: "భాషను ఎంచుకోండి",
-    patient: "రోగి",
-    asha: "ఆశా / ANM",
-    medical: "మెడికల్ టీమ్",
-    vitalsTitle: "రోగి వైటల్స్ మరియు మందులు",
-    bloodPressure: "రక్తపోటు",
-    temperature: "ఉష్ణోగ్రత",
-    pulse: "పల్స్ / హార్ట్ రేట్",
-    spo2: "SpO₂",
-    updateVitals: "రోగి రికార్డును అప్‌డేట్ చేయండి",
-    medicinesTitle: "కొనసాగుతున్న మందులు",
-    addMedicine: "మందు జోడించండి",
-    teleconsultTitle: "డాక్టర్‌తో మాట్లాడండి",
-    startConsult: "కన్సల్టేషన్ ప్రారంభించండి",
-  },
-  kn: {
-    language: "ಭಾಷೆ",
-    selectLanguage: "ಭಾಷೆಯನ್ನು ಆಯ್ಕೆಮಾಡಿ",
-    patient: "ರೋಗಿ",
-    asha: "ಆಶಾ / ANM",
-    medical: "ವೈದ್ಯಕೀಯ ತಂಡ",
-    vitalsTitle: "ರೋಗಿಯ ವೈಟಲ್ಸ್ ಮತ್ತು ಔಷಧಿಗಳು",
-    bloodPressure: "ರಕ್ತದೊತ್ತಡ",
-    temperature: "ತಾಪಮಾನ",
-    pulse: "ನಾಡಿ / ಹೃದಯ ಬಡಿತ",
-    spo2: "SpO₂",
-    updateVitals: "ರೋಗಿ ದಾಖಲೆಯನ್ನು ನವೀಕರಿಸಿ",
-    medicinesTitle: "ನಡೆಯುತ್ತಿರುವ ಔಷಧಿಗಳು",
-    addMedicine: "ಔಷಧಿ ಸೇರಿಸಿ",
-    teleconsultTitle: "ವೈದ್ಯರೊಂದಿಗೆ ಮಾತನಾಡಿ",
-    startConsult: "ಸಲಹೆ ಪ್ರಾರಂಭಿಸಿ",
-  },
-  ml: {
-    language: "ഭാഷ",
-    selectLanguage: "ഭാഷ തിരഞ്ഞെടുക്കുക",
-    patient: "രോഗി",
-    asha: "ആശ / ANM",
-    medical: "മെഡിക്കൽ ടീം",
-    vitalsTitle: "രോഗിയുടെ വൈറ്റൽസും മരുന്നുകളും",
-    bloodPressure: "രക്തസമ്മർദ്ദം",
-    temperature: "താപനില",
-    pulse: "പൾസ് / ഹാർട്ട് റേറ്റ്",
-    spo2: "SpO₂",
-    updateVitals: "രോഗി രേഖ അപ്ഡേറ്റ് ചെയ്യുക",
-    medicinesTitle: "നിലവിലെ മരുന്നുകൾ",
-    addMedicine: "മരുന്ന് ചേർക്കുക",
-    teleconsultTitle: "ഡോക്ടറുമായി സംസാരിക്കുക",
-    startConsult: "കൺസൾട്ടേഷൻ ആരംഭിക്കുക",
-  },
-  pa: {
-    language: "ਭਾਸ਼ਾ",
-    selectLanguage: "ਭਾਸ਼ਾ ਚੁਣੋ",
-    patient: "ਮਰੀਜ਼",
-    asha: "ਆਸ਼ਾ / ANM",
-    medical: "ਮੈਡੀਕਲ ਟੀਮ",
-    vitalsTitle: "ਮਰੀਜ਼ ਦੇ ਵਾਈਟਲ ਅਤੇ ਦਵਾਈਆਂ",
-    bloodPressure: "ਬਲੱਡ ਪ੍ਰੈਸ਼ਰ",
-    temperature: "ਤਾਪਮਾਨ",
-    pulse: "ਪਲਸ / ਦਿਲ ਦੀ ਧੜਕਨ",
-    spo2: "SpO₂",
-    updateVitals: "ਮਰੀਜ਼ ਰਿਕਾਰਡ ਅਪਡੇਟ ਕਰੋ",
-    medicinesTitle: "ਚੱਲ ਰਹੀਆਂ ਦਵਾਈਆਂ",
-    addMedicine: "ਦਵਾਈ ਸ਼ਾਮਲ ਕਰੋ",
-    teleconsultTitle: "ਡਾਕਟਰ ਨਾਲ ਗੱਲ ਕਰੋ",
-    startConsult: "ਕੰਸਲਟੇਸ਼ਨ ਸ਼ੁਰੂ ਕਰੋ",
-  },
-  or: {
-    language: "ଭାଷା",
-    selectLanguage: "ଭାଷା ବାଛନ୍ତୁ",
-    patient: "ରୋଗୀ",
-    asha: "ଆଶା / ANM",
-    medical: "ମେଡିକାଲ ଟିମ୍",
-    vitalsTitle: "ରୋଗୀର ଭାଇଟାଲ୍ ଓ ଔଷଧ",
-    bloodPressure: "ରକ୍ତଚାପ",
-    temperature: "ତାପମାତ୍ରା",
-    pulse: "ପଲ୍ସ / ହାର୍ଟ ରେଟ୍",
-    spo2: "SpO₂",
-    updateVitals: "ରୋଗୀ ରେକର୍ଡ ଅପଡେଟ୍ କରନ୍ତୁ",
-    medicinesTitle: "ଚାଲୁଥିବା ଔଷଧ",
-    addMedicine: "ଔଷଧ ଯୋଡନ୍ତୁ",
-    teleconsultTitle: "ଡାକ୍ତରଙ୍କ ସହ କଥା ହୁଅନ୍ତୁ",
-    startConsult: "ପରାମର୍ଶ ଆରମ୍ଭ କରନ୍ତୁ",
-  },
+  mr: MR,
+  gu: GU,
+  ta: TA,
+  te: TE,
 };
 // Fold in the word lists (lang/words-*.js): [English, Bengali, Hindi] per key.
 for (const words of [WORDS_A, WORDS_B]) {
@@ -587,7 +444,7 @@ export function LanguageProvider({ children }) {
   useEffect(() => {
     writeLS("sahyogcare_language", language);
     document.documentElement.lang = language;
-    document.documentElement.dir = ["ur", "sd", "ks"].includes(language) && LOCAL[language] ? "rtl" : "ltr";
+    document.documentElement.dir = "ltr";
   }, [language]);
   const t = (k) => LOCAL[language]?.[k] ?? EN[k] ?? k;
   return <LanguageContext.Provider value={{ language, setLanguage, t }}>{children}</LanguageContext.Provider>;
