@@ -150,6 +150,7 @@ def request_code(body: OtpRequestIn, request: Request, db: Session = Depends(get
         if phone:
             log.exception("Login SMS could not be sent")
             raise ApiError(503, "SMS_FAILED", "The SMS could not be sent. Please sign in with your email.") from exc
+        log.exception("Login email could not be sent")
         raise ApiError(503, "EMAIL_FAILED", "Could not send the login code. Please try again.") from exc
     db.commit()
 
