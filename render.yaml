@@ -53,3 +53,6 @@ services:
         sync: false
       - key: SAHYOG_SMTP_FROM
         sync: false
+      # Optional: SMS (Fast2SMS) for dose reminders, family alerts and phone login.
+      - key: SAHYOG_SMS_API_KEY
+        sync: false
