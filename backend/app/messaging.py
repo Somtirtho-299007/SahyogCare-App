@@ -32,7 +32,7 @@ def sms_enabled() -> bool:
 
 
 def email_enabled() -> bool:
-    return bool(settings.brevo_api_key or settings.smtp_host)
+    return bool(settings.email_relay_url or settings.brevo_api_key or settings.smtp_host)
 
 
 def _post(url: str, data: bytes, headers: dict[str, str]) -> bytes:
@@ -71,6 +71,11 @@ def _send_sms(phone: str, text: str) -> None:
 
 
 def _send_email(to: str, subject: str, text: str) -> None:
+    if settings.email_relay_url:
+        from app.emailer import send_via_relay
+
+        send_via_relay(to, subject, text)
+        return
     if settings.brevo_api_key:
         name, address = parseaddr(settings.smtp_from)
         payload = {"sender": {"name": name or "SahyogCare", "email": address}, "to": [{"email": to}],

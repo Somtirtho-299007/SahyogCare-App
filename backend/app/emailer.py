@@ -72,7 +72,24 @@ def _send_smtp(to: str, code: str) -> None:
         smtp.send_message(msg)
 
 
+def send_via_relay(to: str, subject: str, text: str) -> None:
+    """Send through the Google Apps Script relay (your own Gmail, free, over HTTPS)."""
+    payload = json.dumps({"secret": settings.email_relay_secret, "to": to, "subject": subject,
+                          "text": text}).encode()
+    request = urllib.request.Request(settings.email_relay_url, data=payload,
+                                     headers={"content-type": "application/json"}, method="POST")
+    # Apps Script answers through a redirect; urllib follows it and we read the final text.
+    with urllib.request.urlopen(request, timeout=20) as response:
+        answer = response.read()[:200].decode(errors="replace").strip()
+    if answer != "ok":
+        log.error("Email relay did not send: %s", answer)
+        raise RuntimeError(f"Email relay answered: {answer}")
+
+
 def send_login_code(to: str, code: str) -> None:
+    if settings.email_relay_url:
+        send_via_relay(to, SUBJECT, _body(code))
+        return
     if settings.brevo_api_key:
         _send_brevo(to, code)
         return

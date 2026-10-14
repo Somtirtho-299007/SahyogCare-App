@@ -56,6 +56,10 @@ class Settings(BaseSettings):
     # Brevo (brevo.com) email API key. Sends over HTTPS, so it works on hosts that
     # block SMTP ports (Render's free plan does). Used instead of SMTP when set.
     brevo_api_key: str = ""
+    # Free email through your own Gmail: a small Google Apps Script web app that sends the
+    # mail (see docs/EMAIL_RELAY.md). Used before Brevo when set. Gmail-to-Gmail lands in the inbox.
+    email_relay_url: str = ""
+    email_relay_secret: str = ""
 
     # Real email addresses (comma-separated) that are made coordinators when the
     # server starts. The coordinator then adds every other user from the app.
