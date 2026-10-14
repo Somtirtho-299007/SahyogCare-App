@@ -56,6 +56,19 @@ def create_patient(
             func.lower(Patient.name) == body.name.lower(),
         )
     )
+    # The person already made their own account on the Patient door (same mobile, same name):
+    # take that record onto this ASHA's register instead of making a second one.
+    own = db.scalar(select(Patient).where(Patient.self_registered.is_(True), Patient.phone == body.phone,
+                                          func.lower(Patient.name) == body.name.lower()).with_for_update())
+    if own is not None and duplicate is None:
+        own.created_by_id, own.self_registered = user.id, False
+        own.age, own.sex = body.age, body.sex or own.sex
+        own.address = body.address or own.address
+        own.email = body.email or own.email
+        own.latitude, own.longitude = body.latitude or own.latitude, body.longitude or own.longitude
+        db.add(AuditLog(actor_id=user.id, action="PATIENT_TAKEN_ON", target_type="patient", target_id=own.id))
+        commit(db)
+        return PatientCreatedOut(**PatientOut.model_validate(own).model_dump(), took_over_own_account=True)
     patient = Patient(
         name=body.name, age=body.age, sex=body.sex, phone=body.phone, abha_number=body.abha_number,
         email=body.email, language=body.language, address=body.address,

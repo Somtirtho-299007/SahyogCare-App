@@ -18,7 +18,7 @@ from datetime import timedelta
 
 import jwt
 from fastapi import APIRouter, Depends, Request
-from sqlalchemy import or_, select, update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.orm import Session
 
 from app import ambulance
@@ -27,7 +27,7 @@ from app.db import get_db
 from app.emailer import send_login_code
 from app.errors import ApiError
 from app.messaging import send_login_code_sms, sms_enabled
-from app.models import AuditLog, Facility, FollowUp, OtpCode, Patient, Referral
+from app.models import AuditLog, Facility, FollowUp, Notification, OtpCode, Patient, Referral, User
 from app.ratelimit import RateLimiter
 from app.rules import (
     EMERGENCY_GUIDE,
@@ -36,6 +36,8 @@ from app.rules import (
     OTP_RESEND_AFTER,
     OTP_VALID_FOR,
     PATIENT_LOGINS_PER_MINUTE,
+    SELF_SIGNUPS_PER_PHONE,
+    Role,
     is_open,
 )
 from app.schemas import (
@@ -48,10 +50,12 @@ from app.schemas import (
     PatientCodeRequestOut,
     PatientCodeVerifyIn,
     PatientRecordOut,
+    PatientSignupIn,
     PatientTokenOut,
     PublicAmbulance,
     PublicStep,
 )
+from app.records import unique_health_id
 from app.security import ALGORITHM, current_patient, hash_otp, new_otp, otp_matches, patient_token_for
 from app.timeutil import as_utc, utcnow
 from app.workflow import commit, rerouted_to
@@ -101,10 +105,10 @@ def issue_patient_code(db: Session, key: str, valid_for: timedelta = OTP_VALID_F
 
 @router.post("/login/request", response_model=PatientCodeRequestOut, status_code=202)
 def patient_code_request(body: PatientCodeRequestIn, request: Request, db: Session = Depends(get_db)) -> PatientCodeRequestOut:
-    """Step 1: send a code to the patient's registered mobile (SMS) or email.
+    """Step 1: send a code to the patient's mobile (SMS), registered or not.
 
-    Without SMS, the answer says to ask the ASHA, who can show a code on her phone.
-    The answer is the same whether or not anyone is registered on that number.
+    Without SMS, the answer says to ask the ASHA, who can show a code on her phone
+    (only for people already on her register).
     """
     patient_login_limiter.check(request.client.host if request.client else "unknown")
     phone, email = _identity(body)
@@ -113,7 +117,9 @@ def patient_code_request(body: PatientCodeRequestIn, request: Request, db: Sessi
     if channel == "asha":
         return PatientCodeRequestOut(channel=channel)
     key = patient_key(phone, email)
-    if not _patients_on(db, phone, email):
+    # Anyone may sign in or make their own account with their mobile number. An email works
+    # only when it is already on a patient's record.
+    if email and not _patients_on(db, phone, email):
         return PatientCodeRequestOut(channel=channel)
     previous = db.scalar(select(OtpCode).where(OtpCode.email == key, OtpCode.used_at.is_(None))
                          .order_by(OtpCode.created_at.desc()).limit(1))
@@ -173,16 +179,76 @@ def patient_code_verify(body: PatientCodeVerifyIn, request: Request, db: Session
         raise ApiError(400, "OTP_INVALID", "Wrong code.", {"attempts_left": OTP_MAX_ATTEMPTS - otp.attempts})
     otp.used_at = utcnow()
     people = _patients_on(db, phone, email)
+    # The number is proven: a new person on it (or the first one) may make their own account.
+    signup = _signup_token(phone) if phone else None
     if not people:
         db.commit()
-        raise ApiError(400, "OTP_INVALID", "This code is not valid. Please ask for a new code.")
+        return PatientChoiceOut(new_account=True, signup_token=signup)
     if len(people) == 1:
-        return PatientChoiceOut(signed_in=_signed_in(db, people[0]))
+        out = PatientChoiceOut(signed_in=_signed_in(db, people[0]))
+        out.signup_token = signup
+        return out
     db.commit()
     return PatientChoiceOut(
         choose_token=_choice_token(key, [p.id for p in people]),
         people=[{"id": p.id, "name": p.name, "age": p.age, "sex": p.sex} for p in people],
+        signup_token=signup,
     )
+
+
+def _signup_token(phone: str) -> str:
+    now = utcnow()
+    payload = {"sub": phone, "type": "patient-signup", "iat": now, "exp": now + timedelta(minutes=CHOOSE_MINUTES)}
+    return jwt.encode(payload, settings.secret_key, algorithm=ALGORITHM)
+
+
+def _area_office(db: Session, district: str) -> User | None:
+    """Who looks after a self-registered patient until an ASHA takes them: the area's office."""
+    return db.scalar(select(User).where(User.role == Role.COORDINATOR, User.district == district,
+                                        User.approved.is_(True), User.is_active.is_(True))
+                     .order_by(User.created_at).limit(1))
+
+
+@router.post("/login/signup", response_model=PatientTokenOut, status_code=201)
+def patient_signup(body: PatientSignupIn, db: Session = Depends(get_db)) -> PatientTokenOut:
+    """A patient makes their own account on their proven mobile number.
+
+    They see their own (new) record at once and can use the night emergency button. The
+    area's district office is told; when an ASHA registers the same person (same mobile and
+    name), the record moves onto her register with everything in it.
+    """
+    try:
+        payload = jwt.decode(body.signup_token, settings.secret_key, algorithms=[ALGORITHM])
+    except jwt.InvalidTokenError as exc:
+        raise ApiError(401, "AUTH_REQUIRED", "That took too long. Please start again.") from exc
+    if payload.get("type") != "patient-signup":
+        raise ApiError(401, "AUTH_REQUIRED", "Please start again.")
+    if not body.consent:
+        raise ApiError(422, "CONSENT_REQUIRED", "Please agree to your details being recorded.",
+                       {"fields": {"consent": "Required"}})
+    if body.district not in settings.district_list:
+        raise ApiError(422, "VALIDATION_ERROR", "Choose your area.", {"fields": {"district": "Unknown area"}})
+    phone = payload["sub"]
+    if db.scalar(select(func.count(Patient.id)).where(Patient.phone == phone)) >= SELF_SIGNUPS_PER_PHONE:
+        raise ApiError(409, "TOO_MANY_ON_PHONE", "Too many people are already registered on this number.")
+    name = " ".join(body.name.split())
+    same = db.scalar(select(Patient).where(Patient.phone == phone, func.lower(Patient.name) == name.lower()))
+    if same is not None:  # pressed twice, or already registered by the ASHA: just sign in
+        return _signed_in(db, same)
+    office = _area_office(db, body.district)
+    if office is None:
+        raise ApiError(503, "AREA_NOT_READY", "This area's district office has not joined yet. Please ask your ASHA.")
+    patient = Patient(name=name, age=body.age, sex=body.sex, phone=phone, address=(body.address or "").strip() or None,
+                      language=body.language if body.language in ("bn", "hi", "en") else "bn",
+                      consent_recorded_at=utcnow(), created_by_id=office.id, health_id=unique_health_id(db),
+                      self_registered=True)
+    db.add(patient)
+    db.flush()
+    db.add(AuditLog(actor_id=None, action="PATIENT_SELF_SIGNUP", target_type="patient", target_id=patient.id))
+    db.add(Notification(user_id=office.id, kind="PATIENT_SELF_SIGNUP",
+                        message=f"{patient.name} ({patient.age}) made their own patient account"
+                                f"{' — ' + patient.address if patient.address else ''}. An ASHA can add them to her register."[:300]))
+    return _signed_in(db, patient)
 
 
 @router.post("/login/choose", response_model=PatientTokenOut)
