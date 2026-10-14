@@ -29,7 +29,9 @@ from app.routers import (
     insights,
     notifications,
     patients,
+    photos,
     public,
+    records,
     referrals,
     sync,
     users,
@@ -66,6 +68,9 @@ app.include_router(health.router, prefix=API)
 app.include_router(auth.router, prefix=API)
 app.include_router(facilities.router, prefix=API)
 app.include_router(patients.router, prefix=API)
+app.include_router(patients.ranges_router, prefix=API)
+app.include_router(records.router, prefix=API)
+app.include_router(photos.router, prefix=API)
 app.include_router(referrals.router, prefix=API)
 app.include_router(ambulance.router, prefix=API)
 app.include_router(notifications.router, prefix=API)

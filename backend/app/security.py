@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.db import get_db
 from app.errors import ApiError
-from app.models import User
+from app.models import Patient, User
 from app.rules import OTP_LENGTH
 from app.timeutil import utcnow
 
@@ -52,6 +52,16 @@ def access_token_for(user: User) -> str:
 
 def refresh_token_for(user: User) -> str:
     return _make_token(user, "refresh", timedelta(days=settings.refresh_token_days))
+
+
+PATIENT_TOKEN_DAYS = 30
+
+
+def patient_token_for(patient: Patient) -> str:
+    """A patient's own sign-in (Health ID + phone digits): their record and emergency booking only."""
+    now = utcnow()
+    payload = {"sub": patient.id, "type": "patient", "iat": now, "exp": now + timedelta(days=PATIENT_TOKEN_DAYS)}
+    return jwt.encode(payload, settings.secret_key, algorithm=ALGORITHM)
 
 
 def read_token(token: str, expected_type: str) -> str:
@@ -106,3 +116,36 @@ def require_roles(*roles: str) -> Callable[..., User]:
         return user
 
     return _check
+
+
+def current_patient(
+    creds: HTTPAuthorizationCredentials | None = Depends(_bearer),
+    db: Session = Depends(get_db),
+) -> Patient:
+    """A patient signed in with their Health ID."""
+    if creds is None or creds.scheme.lower() != "bearer":
+        raise ApiError(401, "AUTH_REQUIRED", "Please sign in with your Health ID.")
+    patient = db.get(Patient, read_token(creds.credentials, "patient"))
+    if patient is None:
+        raise ApiError(401, "AUTH_REQUIRED", "Please sign in with your Health ID.")
+    return patient
+
+
+def current_viewer(
+    creds: HTTPAuthorizationCredentials | None = Depends(_bearer),
+    db: Session = Depends(get_db),
+) -> User | Patient:
+    """A staff user (possibly not yet approved) or a signed-in patient, for things both may see."""
+    if creds is None or creds.scheme.lower() != "bearer":
+        raise ApiError(401, "AUTH_REQUIRED", "Please log in.")
+    try:
+        payload = jwt.decode(creds.credentials, settings.secret_key, algorithms=[ALGORITHM])
+    except jwt.InvalidTokenError as exc:
+        raise ApiError(401, "AUTH_REQUIRED", "Please log in.") from exc
+    if payload.get("type") == "patient":
+        patient = db.get(Patient, payload.get("sub"))
+        if patient is None:
+            raise ApiError(401, "AUTH_REQUIRED", "Please sign in again.")
+        return patient
+    # May still be waiting for approval; callers decide what such a user may see.
+    return load_active_user(db, read_token(creds.credentials, "access"))

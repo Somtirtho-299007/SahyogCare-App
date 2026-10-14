@@ -48,12 +48,14 @@ STATUS_MESSAGES = {
     Status.OVERDUE: "{code}: the follow-up for {patient} is overdue.",
     Status.ESCALATED: "{code}: the overdue follow-up for {patient} was escalated by the coordinator.",
     Status.CLOSED: "{code}: the referral for {patient} is closed.",
+    Status.DECEASED: "{code}: {patient} has died. The referral is stopped.",
 }
 
 # What happens to the held bed and any ambulance when a referral reaches a status.
 RELEASE_REASONS = {
     Status.REJECTED: "Referral rejected",
     Status.REROUTED: "Patient sent to another hospital",
+    Status.DECEASED: "Patient died",
 }
 
 
@@ -110,6 +112,7 @@ def move(
     )
     _beds_and_ambulance(db, referral, target)
     _notify_creator(db, referral, target, actor)
+    _tell_family(db, referral, target)
 
 
 def _beds_and_ambulance(db: Session, referral: Referral, target: Status) -> None:
@@ -141,6 +144,19 @@ def _notify_creator(db: Session, referral: Referral, target: Status, actor: User
     facility = db.get(Facility, referral.destination_facility_id)
     message = template.format(code=referral.code, patient=patient.name, facility=facility.name)
     notify(db, referral.created_by_id, referral, f"STATUS_{target}", message)
+
+
+def _tell_family(db: Session, referral: Referral, target: Status) -> None:
+    """The family hears the good news by SMS (or email) in their language, without opening the app."""
+    if target != Status.ACCEPTED:
+        return
+    from app import messaging
+
+    patient = db.get(Patient, referral.patient_id)
+    facility = db.get(Facility, referral.destination_facility_id)
+    messaging.send(phone=patient.phone, email=patient.email, subject="SahyogCare: referral accepted",
+                   text=messaging.text("accepted", patient.language, hospital=facility.name,
+                                       name=patient.name, code=referral.code))
 
 
 def set_service_availability(
@@ -185,6 +201,11 @@ def referral_out(db: Session, referral: Referral) -> ReferralOut:
         select(FollowUp).where(FollowUp.referral_id == referral.id).order_by(FollowUp.created_at.desc()).limit(1)
     )
     next_ref = rerouted_to(db, referral)
+    from app.records import encounter_vitals, flags_for, latest_vitals
+
+    newest = latest_vitals(db, referral.patient_id)
+    newest = newest if newest is not None and newest.id != encounter.id else None
+    shown = encounter_vitals(newest) if newest else encounter_vitals(encounter)
     return ReferralOut(
         id=referral.id,
         code=referral.code,
@@ -218,6 +239,10 @@ def referral_out(db: Session, referral: Referral) -> ReferralOut:
         if referral.rerouted_from_id else None,
         rerouted_to_id=next_ref.id if next_ref else None,
         rerouted_to_code=next_ref.code if next_ref else None,
+        origin=referral.origin,
+        latest_vitals=Vitals(**shown) if newest else None,
+        latest_vitals_at=as_utc(newest.created_at) if newest else None,
+        vitals_flags=flags_for(shown),
     )
 
 

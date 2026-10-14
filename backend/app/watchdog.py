@@ -1,23 +1,38 @@
 """Referral watchdog: treats *nothing happening* as a warning sign.
 
-See docs/WORKFLOW.md, "Time rules (watchdog)". Runs every few minutes in the
-background (see app/main.py) and can be started by hand with
-POST /api/v1/watchdog/run. Alerts are deduplicated, so running it often is safe.
+See docs/WORKFLOW.md, "Time rules (watchdog)". Every few minutes it also completes
+finished medicine courses, sends dose reminders to patients, and reminds hospital
+staff at shift change to update bed counts.
+
+How it runs (alerts are deduplicated, so running it often is safe):
+- inside the web server, every 5 minutes (default; SAHYOG_WATCHDOG_ENABLED=true);
+- or, with several servers, once from outside: `python -m app.watchdog` (e.g. a cron
+  job) or POST /api/v1/watchdog/tick with the X-Cron-Secret header. A database lock
+  makes sure two copies never run at the same moment.
 """
 
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
-from app import ambulance, beds
-from app.models import AmbulanceTrip, Facility, FollowUp, Patient, Referral, User
+from app import ambulance, beds, messaging
+from app.models import AmbulanceTrip, BedWard, CareItem, Facility, FollowUp, Patient, Referral, ReminderLog, User
+from app.records import complete_finished_courses, end_date
 from app.recommend import recommend
 from app.rules import (
     AMBULANCE_LATE_AFTER_ETA,
     AMBULANCE_NOT_DISPATCHED_AFTER,
+    BED_REMINDER_HOURS,
+    BED_REMINDER_STALE,
+    BEFORE_FOOD_EARLIER,
+    DOSE_SLOTS,
+    LOCAL_UTC_OFFSET,
+    REMINDER_WINDOW,
+    CareKind,
+    CareStatus,
     COORDINATOR_ESCALATION_FACTOR,
     NATIONAL_AMBULANCE_NUMBER,
     NOT_ACCEPTED_AFTER,
@@ -59,9 +74,14 @@ def run_watchdog(db: Session, now: datetime | None = None) -> dict[str, int]:
     """Check every open referral once. Returns how many alerts or changes were made."""
     now = now or utcnow()
     counts = {"not_accepted": 0, "not_arrived": 0, "follow_ups_overdue": 0, "coordinator_alerts": 0,
-              "bed_holds_expired": 0, "ambulance_alerts": 0}
+              "bed_holds_expired": 0, "ambulance_alerts": 0, "courses_completed": 0, "dose_reminders": 0,
+              "bed_update_reminders": 0}
     _expire_bed_holds(db, now, counts)
     _check_ambulances(db, now, counts)
+    local = now + LOCAL_UTC_OFFSET
+    counts["courses_completed"] = complete_finished_courses(db, today=local.date())
+    _dose_reminders(db, now, counts)
+    _bed_update_reminders(db, now, counts)
 
     watched = db.scalars(
         select(Referral).where(Referral.status.in_([Status.CREATED, Status.ACCEPTED, Status.FOLLOW_UP_DUE]))
@@ -176,19 +196,105 @@ def _check_ambulances(db: Session, now: datetime, counts: dict[str, int]) -> Non
                 counts["coordinator_alerts"] += 1
 
 
+# ---------- Medicine reminders ----------
+
+
+def _slot_start(local_day, slot: str) -> datetime:
+    hour, minute = DOSE_SLOTS[slot]
+    return datetime(local_day.year, local_day.month, local_day.day, hour, minute)
+
+
+def _dose_reminders(db: Session, now: datetime, counts: dict[str, int]) -> None:
+    """At each dose time, one message per patient listing what to take, in their language."""
+    local = (now + LOCAL_UTC_OFFSET).replace(tzinfo=None)
+    today = local.date()
+    items = db.scalars(select(CareItem).where(CareItem.status == CareStatus.ACTIVE,
+                                              CareItem.kind == CareKind.MEDICINE,
+                                              CareItem.start_date <= today))
+    due: dict[tuple[str, str], list[CareItem]] = {}
+    for item in items:
+        last = end_date(item)
+        if last is not None and last < today:
+            continue
+        for slot in item.timings or []:
+            if slot in DOSE_SLOTS:
+                due.setdefault((item.patient_id, slot), []).append(item)
+    for (patient_id, slot), slot_items in due.items():
+        # Before-food doses are reminded a little earlier; one message covers the whole slot.
+        start = _slot_start(today, slot) - (BEFORE_FOOD_EARLIER if any(i.food == "BEFORE" for i in slot_items)
+                                            else timedelta(0))
+        if not start <= local < start + REMINDER_WINDOW:
+            continue
+        patient = db.get(Patient, patient_id)
+        if patient.deceased_at is not None or not patient.reminders:
+            continue
+        if db.scalar(select(ReminderLog.id).where(ReminderLog.patient_id == patient_id, ReminderLog.day == today,
+                                                  ReminderLog.slot == slot)):
+            continue
+        lang = patient.language if patient.language in messaging.SLOT_NAMES else "en"
+        parts = []
+        for i in slot_items:
+            extra = ", ".join(x for x in (i.dose, messaging.FOOD_WORDS[lang].get(i.food)) if x)
+            parts.append(f"{i.name} ({extra})" if extra else i.name)
+        channel = messaging.send(
+            phone=patient.phone, email=patient.email, subject="SahyogCare: medicine time",
+            text=messaging.text("dose", lang, name=patient.name, slot=messaging.SLOT_NAMES[lang][slot],
+                                items="; ".join(parts)))
+        db.add(ReminderLog(patient_id=patient_id, day=today, slot=slot, channel=channel))
+        counts["dose_reminders"] += 1
+
+
+# ---------- Bed counts at shift change ----------
+
+
+def _bed_update_reminders(db: Session, now: datetime, counts: dict[str, int]) -> None:
+    local = now + LOCAL_UTC_OFFSET
+    if local.hour not in BED_REMINDER_HOURS or local.minute >= REMINDER_WINDOW.total_seconds() // 60:
+        return
+    kind = f"BED_UPDATE_{local:%Y%m%d}_{local.hour:02d}"
+    for facility in db.scalars(select(Facility).where(Facility.active.is_(True))):
+        wards = list(db.scalars(select(BedWard).where(BedWard.facility_id == facility.id)))
+        old = [w.ward.lower() for w in wards if now - as_utc(w.updated_at) > BED_REMINDER_STALE]
+        if not old:
+            continue
+        msg = (f"Shift change: please update today's bed counts at {facility.name} "
+               f"({', '.join(old)}). Fresh counts send you the right patients.")
+        for staff in db.scalars(select(User).where(User.facility_id == facility.id, User.role == Role.FACILITY_STAFF,
+                                                   User.is_active.is_(True))):
+            if notify(db, staff.id, None, kind, msg):
+                counts["bed_update_reminders"] += 1
+
+
+# ---------- Running it ----------
+
+WATCHDOG_LOCK_ID = 727274  # any fixed number; PostgreSQL advisory lock
+
+
+def run_once(session_factory) -> dict[str, int] | None:
+    """One full run in its own transaction. Returns None when another copy is running right now."""
+    with session_factory() as db:
+        if db.bind.dialect.name == "postgresql":
+            if not db.scalar(text("SELECT pg_try_advisory_xact_lock(:k)"), {"k": WATCHDOG_LOCK_ID}):
+                return None
+        result = run_watchdog(db)
+        db.commit()
+        return result
+
+
 async def watchdog_loop(session_factory) -> None:
     """Background task started with the app."""
     while True:
         await asyncio.sleep(WATCHDOG_EVERY.total_seconds())
         try:
-            def _run():
-                with session_factory() as db:
-                    result = run_watchdog(db)
-                    db.commit()
-                    return result
-
-            result = await asyncio.to_thread(_run)
-            if any(result.values()):
+            result = await asyncio.to_thread(run_once, session_factory)
+            if result and any(result.values()):
                 log.info("watchdog: %s", result)
         except Exception:  # never let the loop die
             log.exception("watchdog run failed")
+
+
+if __name__ == "__main__":  # python -m app.watchdog  (one run, e.g. from a cron job)
+    from app.db import SessionLocal
+
+    logging.basicConfig(level=logging.INFO)
+    print(run_once(SessionLocal) or "another run is in progress; skipped")

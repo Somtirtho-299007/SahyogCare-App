@@ -19,12 +19,13 @@ os.environ["SAHYOG_ENVIRONMENT"] = "development"
 os.environ["SAHYOG_WATCHDOG_ENABLED"] = "false"
 
 from fastapi.testclient import TestClient  # noqa: E402
-from sqlalchemy import select  # noqa: E402
+from sqlalchemy import select, text  # noqa: E402
 
 from app.db import Base, SessionLocal, engine  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models import Facility, User  # noqa: E402
 from app.security import access_token_for  # noqa: E402
+from app.migrate import run_migrations  # noqa: E402
 from app.seed import seed  # noqa: E402
 
 API = "/api/v1"
@@ -37,7 +38,9 @@ def say(step: str, text: str) -> None:
 
 def main() -> int:
     Base.metadata.drop_all(engine)
-    Base.metadata.create_all(engine)
+    with engine.begin() as conn:
+        conn.execute(text("DROP TABLE IF EXISTS alembic_version"))
+    run_migrations()  # the same tables a fresh deploy gets
     with SessionLocal() as db:
         seed(db)
         users = {u.email.split("@")[0]: u for u in db.scalars(select(User))}

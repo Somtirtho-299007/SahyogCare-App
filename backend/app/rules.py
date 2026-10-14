@@ -40,6 +40,8 @@ class Status(StrEnum):
     CLOSED = "CLOSED"
     # Sent on to another hospital; the new referral carries on from here.
     REROUTED = "REROUTED"
+    # The patient died. Stops the referral at once, whatever step it was at.
+    DECEASED = "DECEASED"
 
 
 # "SYSTEM" is the server itself (scheduled jobs, automatic steps).
@@ -69,8 +71,15 @@ TRANSITIONS: dict[tuple[Status, Status], frozenset[str]] = {
     (Status.ACCEPTED, Status.REROUTED): frozenset({Role.WORKER, Role.COORDINATOR}),
 }
 
+# "Patient died" stops a referral from any step that is still open. Anyone who looks after
+# the patient may record it: the ASHA, the hospital, or the district office.
+for _open in (Status.CREATED, Status.ACCEPTED, Status.ARRIVAL_RECORDED, Status.CONSULTED,
+              Status.OUTCOME_RECORDED, Status.FOLLOW_UP_DUE, Status.OVERDUE, Status.ESCALATED):
+    TRANSITIONS[(_open, Status.DECEASED)] = frozenset(
+        {Role.WORKER, Role.FACILITY_STAFF, Role.DOCTOR, Role.COORDINATOR})
+
 # The one definition of "open" used by every count and queue.
-FINISHED_STATUSES = frozenset({Status.CLOSED, Status.REJECTED, Status.REROUTED})
+FINISHED_STATUSES = frozenset({Status.CLOSED, Status.REJECTED, Status.REROUTED, Status.DECEASED})
 
 # A referral in these states can be sent on to another hospital
 # (REJECTED: the ASHA picks the next hospital after a refusal).
@@ -131,6 +140,28 @@ def validate_vitals(vitals: dict[str, float | None]) -> dict[str, str]:
     if sys_bp is not None and dia_bp is not None and dia_bp >= sys_bp:
         problems["diastolic"] = "Must be lower than systolic."
     return problems
+
+
+# Normal ranges for an adult at rest, shown beside every reading with a low/normal/high tag.
+# PLACEHOLDERS to be confirmed by a doctor; children and pregnancy have different ranges.
+# (low, high, label shown to the user). Weight has no single normal range.
+NORMAL_RANGES: dict[str, tuple[float, float, str]] = {
+    "systolic": (90, 120, "90–120 mmHg"),
+    "diastolic": (60, 80, "60–80 mmHg"),
+    "pulse": (60, 100, "60–100 /min"),
+    "temperature_c": (36.1, 37.5, "36.1–37.5 °C"),
+    "spo2": (95, 100, "95–100 %"),
+    "respiratory_rate": (12, 20, "12–20 /min"),
+    "glucose_mg_dl": (70, 140, "70–140 mg/dL (random)"),
+}
+
+
+def vital_flag(field: str, value: float | None) -> str | None:
+    """LOW, NORMAL or HIGH against NORMAL_RANGES; None when there is no reading or no range."""
+    if value is None or field not in NORMAL_RANGES:
+        return None
+    low, high, _ = NORMAL_RANGES[field]
+    return "LOW" if value < low else "HIGH" if value > high else "NORMAL"
 
 
 SPO2_SUGGEST_EMERGENCY_BELOW = 90
@@ -349,3 +380,144 @@ def new_invite_code(role: str, place: str) -> str:
     letters = "".join(ch for ch in place.upper() if ch.isalpha())[:3].ljust(3, "X")
     secret = "".join(secrets.choice(CODE_ALPHABET) for _ in range(INVITE_RANDOM_LENGTH))
     return f"{INVITE_PREFIX[Role(role)]}-{letters}-{secret}"
+
+
+# ---------- Health record: conditions, care chart, reminders ----------
+
+
+class ConditionStatus(StrEnum):
+    ACTIVE = "ACTIVE"  # e.g. "fatty liver", being treated
+    CHRONIC = "CHRONIC"  # long-term, e.g. diabetes
+    RESOLVED = "RESOLVED"  # cured / no longer present
+
+
+class CareKind(StrEnum):
+    MEDICINE = "MEDICINE"  # a dose to take
+    PRACTICE = "PRACTICE"  # something to do or avoid (pregnancy, after surgery, ...)
+
+
+class CareCategory(StrEnum):
+    GENERAL = "GENERAL"
+    PREGNANCY = "PREGNANCY"
+    AFTER_SURGERY = "AFTER_SURGERY"
+    CHRONIC = "CHRONIC"
+    CHILD = "CHILD"
+    OTHER = "OTHER"
+
+
+class CareStatus(StrEnum):
+    ACTIVE = "ACTIVE"
+    COMPLETED = "COMPLETED"  # course finished (by date, or marked done)
+    STOPPED = "STOPPED"  # stopped early (doctor's advice, side effects, patient died)
+
+
+class Food(StrEnum):
+    BEFORE = "BEFORE"
+    AFTER = "AFTER"
+    WITH = "WITH"
+    ANY = "ANY"
+
+
+# Dose times of day and the local (India) clock time a reminder goes out.
+DOSE_SLOTS: dict[str, tuple[int, int]] = {
+    "MORNING": (8, 0),
+    "NOON": (13, 0),
+    "EVENING": (18, 0),
+    "NIGHT": (21, 0),
+}
+# A reminder is sent once, during this long after the slot starts (the watchdog runs every 5 minutes).
+REMINDER_WINDOW = timedelta(minutes=30)
+# Before-food doses are reminded this much earlier.
+BEFORE_FOOD_EARLIER = timedelta(minutes=30)
+LOCAL_UTC_OFFSET = timedelta(hours=5, minutes=30)  # India Standard Time
+
+# Languages for messages to patients (others fall back to English).
+PATIENT_LANGUAGES = ("en", "bn", "hi")
+
+# Hospital staff are reminded to update bed counts at shift change (local time) when
+# a ward's count is older than BED_REMINDER_STALE.
+BED_REMINDER_HOURS = (8, 20)
+BED_REMINDER_STALE = timedelta(hours=6)
+
+
+# ---------- Patient emergency booking (when the ASHA cannot be reached) ----------
+
+
+class EmergencyCondition(StrEnum):
+    LABOUR = "LABOUR"  # labour pains / water broke
+    PREGNANCY_BLEEDING = "PREGNANCY_BLEEDING"
+    BREATHING = "BREATHING"
+    CHEST_PAIN = "CHEST_PAIN"
+    UNCONSCIOUS = "UNCONSCIOUS"
+    ACCIDENT = "ACCIDENT"
+    CHILD_HIGH_FEVER = "CHILD_HIGH_FEVER"
+    SNAKE_BITE = "SNAKE_BITE"
+    OTHER = "OTHER"
+
+
+# Condition -> (service to book, description used as the referral reason, precautions until help arrives).
+# PLACEHOLDER first-aid advice, to be confirmed by a doctor. 108 is always shown as well.
+EMERGENCY_GUIDE: dict[str, tuple[str, str, list[str]]] = {
+    EmergencyCondition.LABOUR: ("Maternity", "Labour pains / water broke", [
+        "Call 108 now; tell them it is a delivery.",
+        "Let her lie on her left side; do not let her walk far.",
+        "Keep clean cloths, her ANC card and any reports ready.",
+        "Do not give anything by mouth if she is bleeding heavily.",
+    ]),
+    EmergencyCondition.PREGNANCY_BLEEDING: ("Maternity", "Bleeding in pregnancy", [
+        "Call 108 now.",
+        "Let her lie down with legs slightly raised.",
+        "Use clean pads; keep them to show the doctor.",
+        "Do not give food or drink.",
+    ]),
+    EmergencyCondition.BREATHING: ("Emergency", "Difficulty breathing", [
+        "Call 108 now.",
+        "Sit the patient upright; loosen tight clothing.",
+        "Keep the room airy; no smoke or cooking fire nearby.",
+    ]),
+    EmergencyCondition.CHEST_PAIN: ("Emergency", "Chest pain", [
+        "Call 108 now.",
+        "Keep the patient sitting and still; do not let them walk.",
+        "Carry their current medicines and reports.",
+    ]),
+    EmergencyCondition.UNCONSCIOUS: ("Emergency", "Unconscious / fainted, not waking", [
+        "Call 108 now.",
+        "Lay them on their side so they can breathe; do not give water.",
+        "Note the time it happened.",
+    ]),
+    EmergencyCondition.ACCIDENT: ("Emergency", "Accident / injury", [
+        "Call 108 now.",
+        "Press a clean cloth firmly on any bleeding.",
+        "Do not move the neck or back if they fell from a height.",
+    ]),
+    EmergencyCondition.CHILD_HIGH_FEVER: ("Paediatrics", "Child with high fever or fits", [
+        "Call 108 now if the child has fits or will not wake.",
+        "Sponge with normal (not cold) water; remove heavy clothes.",
+        "Keep breastfeeding or giving sips of water if awake.",
+    ]),
+    EmergencyCondition.SNAKE_BITE: ("Emergency", "Snake bite", [
+        "Call 108 now; go to hospital for anti-venom.",
+        "Keep the bitten limb still and below heart level.",
+        "Do not cut, suck or tie the bite tightly.",
+    ]),
+    EmergencyCondition.OTHER: ("Emergency", "Emergency", [
+        "Call 108 now.",
+        "Keep the patient's reports and medicines ready.",
+    ]),
+}
+# A patient can have only one self-booked emergency open at a time.
+EMERGENCY_PER_PATIENT_OPEN = 1
+# Patient sign-in attempts (Health ID + phone digits) allowed per IP per minute.
+PATIENT_LOGINS_PER_MINUTE = 5
+
+# Patient Health ID shown on the ASHA's register, e.g. "HID-7K3M9Q".
+HEALTH_ID_LENGTH = 6
+
+
+def new_health_id() -> str:
+    return "HID-" + "".join(secrets.choice(CODE_ALPHABET) for _ in range(HEALTH_ID_LENGTH))
+
+
+# Photos (patient, prescription, ASHA at sign-up) are resized on the phone before upload.
+PHOTO_MAX_BYTES = 600_000
+PHOTO_TYPES = ("image/jpeg", "image/png", "image/webp")

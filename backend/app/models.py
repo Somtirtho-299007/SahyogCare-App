@@ -7,10 +7,12 @@ from sqlalchemy import (
     JSON,
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     Float,
     ForeignKey,
     Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
@@ -19,7 +21,19 @@ from sqlalchemy import true
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
-from app.rules import AmbulanceStatus, HoldStatus, Role, Status, Triage, Ward
+from app.rules import (
+    AmbulanceStatus,
+    CareCategory,
+    CareKind,
+    CareStatus,
+    ConditionStatus,
+    Food,
+    HoldStatus,
+    Role,
+    Status,
+    Triage,
+    Ward,
+)
 
 
 def new_id() -> str:
@@ -94,7 +108,9 @@ class User(Base):
     __table_args__ = (_enum_check("role", list(Role)),)
 
     id: Mapped[str] = mapped_column(ID, primary_key=True, default=new_id)
-    email: Mapped[str] = mapped_column(String(254), unique=True, index=True)
+    # Every account has an email, a mobile number, or both (phone login needs an SMS service).
+    email: Mapped[str | None] = mapped_column(String(254), unique=True, index=True)
+    phone: Mapped[str | None] = mapped_column(String(10), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(120))
     role: Mapped[str] = mapped_column(String(20))
     facility_id: Mapped[str | None] = mapped_column(ForeignKey("facilities.id"))
@@ -103,7 +119,14 @@ class User(Base):
     # False for people who signed up themselves and are waiting for the coordinator
     # to approve their role. They can log in but see no records until approved.
     approved: Mapped[bool] = mapped_column(Boolean, default=True, server_default=true())
+    # Own photo, taken at sign-up so the district office can check a real ASHA is joining.
+    photo_id: Mapped[str | None] = mapped_column(ID)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    @property
+    def contact(self) -> str:
+        """Email or mobile number, for messages that name the person."""
+        return self.email or self.phone or self.id
 
 
 class OtpCode(Base):
@@ -132,8 +155,22 @@ class Patient(Base):
     phone: Mapped[str] = mapped_column(String(10), index=True)
     abha_number: Mapped[str | None] = mapped_column(String(20))  # ABDM, later
     consent_recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # The ASHA who looks after this patient (their register). Every referral of the
+    # patient stays under this one record.
     created_by_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    # The patient's own sign-in ID (with the last 4 digits of their phone), e.g. HID-7K3M9Q.
+    health_id: Mapped[str | None] = mapped_column(String(12), unique=True, index=True)
+    email: Mapped[str | None] = mapped_column(String(254))  # optional, for reminders
+    language: Mapped[str] = mapped_column(String(5), default="bn", server_default="bn")
+    address: Mapped[str | None] = mapped_column(String(300))  # village, para, landmark
+    latitude: Mapped[float | None] = mapped_column(Float)
+    longitude: Mapped[float | None] = mapped_column(Float)
+    photo_id: Mapped[str | None] = mapped_column(ID)
+    # Medicine reminders by SMS / email at dose times.
+    reminders: Mapped[bool] = mapped_column(Boolean, default=True, server_default=true())
+    deceased_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    death_cause: Mapped[str | None] = mapped_column(String(300))
 
 
 class Encounter(Base):
@@ -156,6 +193,11 @@ class Encounter(Base):
     glucose_mg_dl: Mapped[float | None] = mapped_column(Float)
     weight_kg: Mapped[float | None] = mapped_column(Float)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    # REFERRAL (before a referral), HOME_VISIT (routine visit), VITALS_UPDATE (new readings,
+    # e.g. after a checkup) or EMERGENCY (booked by the patient).
+    kind: Mapped[str] = mapped_column(String(20), default="REFERRAL", server_default="REFERRAL")
+    # The referral these readings belong to, when they were taken during one.
+    referral_id: Mapped[str | None] = mapped_column(ID, index=True)
 
     medicines: Mapped[list["Medicine"]] = relationship(cascade="all, delete-orphan")
 
@@ -193,6 +235,8 @@ class Referral(Base):
     follow_up_days: Mapped[int | None] = mapped_column(Integer)
     # Set when this referral continues an earlier one that was sent on from another hospital.
     rerouted_from_id: Mapped[str | None] = mapped_column(ForeignKey("referrals.id"), index=True)
+    # ASHA, or PATIENT_EMERGENCY when the patient booked it at night and the system acted for the ASHA.
+    origin: Mapped[str] = mapped_column(String(20), default="ASHA", server_default="ASHA")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
@@ -309,6 +353,7 @@ class AccessRequest(Base):
     facility_id: Mapped[str | None] = mapped_column(ForeignKey("facilities.id"))
     name: Mapped[str] = mapped_column(String(120))
     note: Mapped[str | None] = mapped_column(String(300))  # e.g. "ASHA, Chakdaha block, ID 1234"
+    photo_id: Mapped[str | None] = mapped_column(ID)  # the person's own photo, for checking
     status: Mapped[str] = mapped_column(String(20), default="PENDING", index=True)
     decided_by_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"))
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -372,3 +417,116 @@ class AmbulanceTrip(Base):
     picked_up_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     cancel_reason: Mapped[str | None] = mapped_column(String(200))
+
+
+class Photo(Base):
+    """A photo kept in the database (the free server has no lasting disk).
+
+    owner_type: "patient" (identification), "prescription", or "user" (an ASHA at sign-up).
+    """
+
+    __tablename__ = "photos"
+
+    id: Mapped[str] = mapped_column(ID, primary_key=True, default=new_id)
+    owner_type: Mapped[str] = mapped_column(String(20))
+    owner_id: Mapped[str | None] = mapped_column(ID, index=True)
+    content_type: Mapped[str] = mapped_column(String(20))
+    data: Mapped[bytes] = mapped_column(LargeBinary)
+    uploaded_by_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Condition(Base):
+    """A health problem in the patient's history, e.g. "Fatty liver" (ACTIVE, later RESOLVED)."""
+
+    __tablename__ = "conditions"
+    __table_args__ = (_enum_check("status", list(ConditionStatus)),)
+
+    id: Mapped[str] = mapped_column(ID, primary_key=True, default=new_id)
+    patient_id: Mapped[str] = mapped_column(ForeignKey("patients.id"), index=True)
+    name: Mapped[str] = mapped_column(String(120))
+    status: Mapped[str] = mapped_column(String(20), default=ConditionStatus.ACTIVE)
+    noted_on: Mapped[datetime | None] = mapped_column(Date)
+    created_by_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    events: Mapped[list["ConditionEvent"]] = relationship(
+        order_by="ConditionEvent.at", cascade="all, delete-orphan")
+
+
+class ConditionEvent(Base):
+    """Every change of a condition's status, so the history reads "fatty liver → cured"."""
+
+    __tablename__ = "condition_events"
+    __table_args__ = (_enum_check("status", list(ConditionStatus)),)
+
+    id: Mapped[str] = mapped_column(ID, primary_key=True, default=new_id)
+    condition_id: Mapped[str] = mapped_column(ForeignKey("conditions.id", ondelete="CASCADE"), index=True)
+    status: Mapped[str] = mapped_column(String(20))
+    note: Mapped[str | None] = mapped_column(String(300))
+    by_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"))
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Prescription(Base):
+    """A doctor's paper prescription, entered by the ASHA (with a photo of the paper)."""
+
+    __tablename__ = "prescriptions"
+
+    id: Mapped[str] = mapped_column(ID, primary_key=True, default=new_id)
+    patient_id: Mapped[str] = mapped_column(ForeignKey("patients.id"), index=True)
+    referral_id: Mapped[str | None] = mapped_column(ForeignKey("referrals.id"))
+    doctor_name: Mapped[str | None] = mapped_column(String(120))
+    facility_name: Mapped[str | None] = mapped_column(String(200))
+    prescribed_on: Mapped[datetime | None] = mapped_column(Date)
+    diagnosis: Mapped[str | None] = mapped_column(String(300))
+    notes: Mapped[str | None] = mapped_column(Text)
+    photo_id: Mapped[str | None] = mapped_column(ID)
+    recorded_by_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class CareItem(Base):
+    """One line of the patient's care chart: a medicine with its timings, or a practice to follow."""
+
+    __tablename__ = "care_items"
+    __table_args__ = (
+        _enum_check("kind", list(CareKind)),
+        _enum_check("category", list(CareCategory)),
+        _enum_check("status", list(CareStatus)),
+        _enum_check("food", list(Food)),
+    )
+
+    id: Mapped[str] = mapped_column(ID, primary_key=True, default=new_id)
+    patient_id: Mapped[str] = mapped_column(ForeignKey("patients.id"), index=True)
+    prescription_id: Mapped[str | None] = mapped_column(ForeignKey("prescriptions.id"))
+    kind: Mapped[str] = mapped_column(String(20), default=CareKind.MEDICINE)
+    category: Mapped[str] = mapped_column(String(20), default=CareCategory.GENERAL)
+    name: Mapped[str] = mapped_column(String(160))  # medicine name, or the practice itself
+    dose: Mapped[str | None] = mapped_column(String(60))  # e.g. "1 tablet", "5 ml"
+    quantity: Mapped[str | None] = mapped_column(String(60))  # e.g. "10 tablets"
+    timings: Mapped[list] = mapped_column(JSON, default=list)  # MORNING / NOON / EVENING / NIGHT
+    food: Mapped[str] = mapped_column(String(10), default=Food.ANY)
+    start_date: Mapped[datetime] = mapped_column(Date)
+    duration_days: Mapped[int | None] = mapped_column(Integer)  # None = until stopped
+    instructions: Mapped[str | None] = mapped_column(String(300))
+    status: Mapped[str] = mapped_column(String(20), default=CareStatus.ACTIVE, index=True)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    end_reason: Mapped[str | None] = mapped_column(String(200))
+    created_by_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ReminderLog(Base):
+    """One reminder sent to one patient for one dose time on one day (never sent twice)."""
+
+    __tablename__ = "reminder_log"
+    __table_args__ = (UniqueConstraint("patient_id", "day", "slot"),)
+
+    id: Mapped[str] = mapped_column(ID, primary_key=True, default=new_id)
+    patient_id: Mapped[str] = mapped_column(ForeignKey("patients.id"), index=True)
+    day: Mapped[datetime] = mapped_column(Date)
+    slot: Mapped[str] = mapped_column(String(20))
+    channel: Mapped[str] = mapped_column(String(10))  # SMS / EMAIL / NONE
+    sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

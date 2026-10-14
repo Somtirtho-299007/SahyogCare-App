@@ -32,8 +32,11 @@ def _version_of_old_database(tables: set[str]) -> str | None:
     """Which migration an unversioned database already matches (None = empty database)."""
     if "facilities" not in tables:
         return None
+    if "photos" in tables:
+        return "0008"
     if "bed_holds" in tables:
-        return "0006"
+        columns = {c["name"] for c in inspect(engine).get_columns("follow_ups")}
+        return "0007" if "sent_at" in columns else "0006"
     if "invite_codes" in tables:
         return "0004"  # 0005 only adds columns; an old database is at most at 0004
     if "access_requests" in tables:

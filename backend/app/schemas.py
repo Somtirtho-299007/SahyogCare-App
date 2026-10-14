@@ -1,6 +1,6 @@
 """Response shapes sent to the frontend."""
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
@@ -121,8 +121,14 @@ Email = Annotated[
 ]
 
 
+Phone = Annotated[str, BeforeValidator(lambda v: v.strip().replace(" ", "") if isinstance(v, str) else v),
+                  Field(pattern=r"^[6-9]\d{9}$", description="10-digit Indian mobile number")]
+
+
 class OtpRequestIn(BaseModel):
-    email: Email
+    # Email, or a mobile number when the SMS service is set up.
+    email: Email | None = None
+    phone: Phone | None = None
 
 
 class OtpRequestOut(BaseModel):
@@ -132,7 +138,8 @@ class OtpRequestOut(BaseModel):
 
 
 class OtpVerifyIn(BaseModel):
-    email: Email
+    email: Email | None = None
+    phone: Phone | None = None
     code: str = Field(pattern=r"^\d{6}$")
 
 
@@ -144,11 +151,13 @@ class UserOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: str
-    email: str
+    email: str | None
+    phone: str | None = None
     name: str
     role: str
     facility_id: str | None
     district: str
+    photo_id: str | None = None
     # False until the coordinator approves a self sign-up; such a user sees no records yet.
     approved: bool = True
 
@@ -163,8 +172,7 @@ class TokensOut(BaseModel):
 
 # ---------- Patients and encounters ----------
 
-Phone = Annotated[str, BeforeValidator(lambda v: v.strip().replace(" ", "") if isinstance(v, str) else v),
-                  Field(pattern=r"^[6-9]\d{9}$", description="10-digit Indian mobile number")]
+Language = Literal["en", "bn", "hi", "gu", "mr", "ta", "te", "kn", "ml", "or", "pa", "as", "ur"]
 
 
 class PatientIn(BaseModel):
@@ -175,6 +183,26 @@ class PatientIn(BaseModel):
     phone: Phone
     abha_number: str | None = Field(None, max_length=20)
     consent_given: bool = Field(description="The ASHA confirms the patient agreed to their data being recorded.")
+    email: Email | None = None
+    language: Language = "bn"
+    address: str | None = Field(None, max_length=300)
+    latitude: float | None = Field(None, ge=-90, le=90)
+    longitude: float | None = Field(None, ge=-180, le=180)
+
+
+class PatientUpdateIn(BaseModel):
+    """Only the fields sent are changed."""
+
+    name: str | None = Field(None, min_length=1, max_length=120)
+    age: int | None = Field(None, ge=0, le=120)
+    sex: Literal["F", "M", "O"] | None = None
+    phone: Phone | None = None
+    email: Email | None = None
+    language: Language | None = None
+    address: str | None = Field(None, max_length=300)
+    latitude: float | None = Field(None, ge=-90, le=90)
+    longitude: float | None = Field(None, ge=-180, le=180)
+    reminders: bool | None = None
 
 
 class PatientOut(BaseModel):
@@ -187,6 +215,14 @@ class PatientOut(BaseModel):
     phone: str
     abha_number: str | None
     created_at: datetime
+    health_id: str | None = None
+    email: str | None = None
+    language: str = "bn"
+    address: str | None = None
+    photo_id: str | None = None
+    reminders: bool = True
+    deceased_at: datetime | None = None
+    death_cause: str | None = None
 
 
 class PatientCreatedOut(PatientOut):
@@ -218,9 +254,13 @@ class MedicineOut(MedicineIn):
 
 class EncounterIn(BaseModel):
     reason: str = Field(min_length=1, max_length=2000)
-    triage: Literal["EMERGENCY", "PRIORITY", "ROUTINE"]
+    triage: Literal["EMERGENCY", "PRIORITY", "ROUTINE"] = "ROUTINE"
     vitals: Vitals = Vitals()
     medicines: list[MedicineIn] = Field(default_factory=list, max_length=30)
+    # REFERRAL (readings before a referral), HOME_VISIT (routine visit, e.g. "all OK"),
+    # VITALS_UPDATE (new readings, e.g. after the checkup).
+    kind: Literal["REFERRAL", "HOME_VISIT", "VITALS_UPDATE"] = "REFERRAL"
+    referral_id: str | None = None  # the referral these readings update
 
 
 class EncounterOut(BaseModel):
@@ -233,6 +273,18 @@ class EncounterOut(BaseModel):
     created_at: datetime
     # A hint for the ASHA only; she makes the triage decision.
     triage_suggestion: str | None = None
+    kind: str = "REFERRAL"
+    referral_id: str | None = None
+    # LOW / NORMAL / HIGH for each reading that has a normal range.
+    flags: dict[str, str] = Field(default_factory=dict)
+    recorded_by_role: str | None = None
+
+
+class VitalRangeOut(BaseModel):
+    field: str
+    low: float
+    high: float
+    label: str
 
 
 # ---------- Referrals ----------
@@ -349,6 +401,13 @@ class ReferralOut(BaseModel):
     rerouted_from_code: str | None = None
     rerouted_to_id: str | None = None
     rerouted_to_code: str | None = None
+    # ASHA, or PATIENT_EMERGENCY (booked by the patient; the system acted for the ASHA).
+    origin: str = "ASHA"
+    # Readings at referral time are in `vitals`; the newest readings (e.g. after the
+    # checkup) are here, with LOW / NORMAL / HIGH flags.
+    latest_vitals: Vitals | None = None
+    latest_vitals_at: datetime | None = None
+    vitals_flags: dict[str, str] = Field(default_factory=dict)
 
 
 class RejectionReasonOut(BaseModel):
@@ -485,3 +544,201 @@ class WatchdogRunOut(BaseModel):
     coordinator_alerts: int
     bed_holds_expired: int = 0
     ambulance_alerts: int = 0
+    courses_completed: int = 0
+    dose_reminders: int = 0
+    bed_update_reminders: int = 0
+
+
+# ---------- Health record ----------
+
+
+class DeceasedIn(BaseModel):
+    cause: str = Field(min_length=2, max_length=300)
+    died_at: datetime  # time of death
+
+
+class PhotoIn(BaseModel):
+    # "data:image/jpeg;base64,..." from the phone camera or gallery, resized on the phone.
+    data_url: str = Field(min_length=30, max_length=900_000)
+    owner_type: Literal["patient", "prescription", "user"]
+    owner_id: str | None = None  # patient / prescription id; empty for the user's own photo
+
+
+class PhotoOut(BaseModel):
+    id: str
+
+
+class ConditionIn(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    status: Literal["ACTIVE", "CHRONIC", "RESOLVED"] = "ACTIVE"
+    noted_on: date | None = None
+    note: str | None = Field(None, max_length=300)
+
+
+class ConditionUpdateIn(BaseModel):
+    status: Literal["ACTIVE", "CHRONIC", "RESOLVED"]
+    note: str | None = Field(None, max_length=300)
+
+
+class ConditionEventOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    status: str
+    note: str | None
+    at: datetime
+
+
+class ConditionOut(BaseModel):
+    id: str
+    name: str
+    status: str
+    noted_on: date | None
+    updated_at: datetime
+    history: list[ConditionEventOut]
+
+
+Timing = Literal["MORNING", "NOON", "EVENING", "NIGHT"]
+
+
+class CareItemIn(BaseModel):
+    """Only the name is required; fill what the prescription or advice gives."""
+
+    kind: Literal["MEDICINE", "PRACTICE"] = "MEDICINE"
+    category: Literal["GENERAL", "PREGNANCY", "AFTER_SURGERY", "CHRONIC", "CHILD", "OTHER"] = "GENERAL"
+    name: str = Field(min_length=1, max_length=160)
+    dose: str | None = Field(None, max_length=60)
+    quantity: str | None = Field(None, max_length=60)
+    timings: list[Timing] = Field(default_factory=list, max_length=4)
+    food: Literal["BEFORE", "AFTER", "WITH", "ANY"] = "ANY"
+    start_date: date | None = None  # default today
+    duration_days: int | None = Field(None, ge=1, le=3650)  # empty = until stopped
+    instructions: str | None = Field(None, max_length=300)
+
+
+class CareItemOut(BaseModel):
+    id: str
+    kind: str
+    category: str
+    name: str
+    dose: str | None
+    quantity: str | None
+    timings: list[str]
+    food: str
+    start_date: date
+    end_date: date | None  # last day of the course
+    duration_days: int | None
+    days_left: int | None
+    instructions: str | None
+    status: str
+    ended_at: datetime | None
+    end_reason: str | None
+    prescription_id: str | None
+
+
+class CareEndIn(BaseModel):
+    status: Literal["COMPLETED", "STOPPED"] = "COMPLETED"
+    reason: str | None = Field(None, max_length=200)
+
+
+class PrescriptionIn(BaseModel):
+    doctor_name: str | None = Field(None, max_length=120)
+    facility_name: str | None = Field(None, max_length=200)
+    prescribed_on: date | None = None
+    diagnosis: str | None = Field(None, max_length=300)
+    notes: str | None = Field(None, max_length=3000)
+    referral_id: str | None = None
+    # Medicines and advice from the prescription go straight onto the care chart.
+    items: list[CareItemIn] = Field(default_factory=list, max_length=30)
+
+
+class PrescriptionOut(BaseModel):
+    id: str
+    doctor_name: str | None
+    facility_name: str | None
+    prescribed_on: date | None
+    diagnosis: str | None
+    notes: str | None
+    photo_id: str | None
+    referral_id: str | None
+    recorded_by_role: str | None
+    created_at: datetime
+    items: list[CareItemOut]
+
+
+class ReferralBrief(BaseModel):
+    id: str
+    code: str
+    status: str
+    triage: str
+    facility_name: str
+    requested_service: str
+    reason: str
+    origin: str
+    created_at: datetime
+
+
+class PatientRecordOut(BaseModel):
+    """Everything about one patient, newest first: for the ASHA, the hospital and the patient."""
+
+    patient: PatientOut
+    asha_name: str | None
+    conditions: list[ConditionOut]
+    prescriptions: list[PrescriptionOut]
+    care_chart: list[CareItemOut]  # active items
+    finished_care: list[CareItemOut]  # recently completed / stopped
+    vitals_history: list[EncounterOut]
+    referrals: list[ReferralBrief]
+    vital_ranges: list[VitalRangeOut]
+
+
+class RegisterRowOut(BaseModel):
+    """One line of the ASHA's patient register."""
+
+    patient: PatientOut
+    last_visit_at: datetime | None
+    open_referral_code: str | None
+    open_referral_status: str | None
+    referrals_count: int
+    active_medicines: int
+
+
+# ---------- Patient sign-in and night emergency ----------
+
+
+class PatientLoginIn(BaseModel):
+    # Health ID (HID-XXXXXX) from the ASHA, or any referral code (SC-XXXXXX) of the patient.
+    code: Annotated[str, BeforeValidator(lambda v: v.strip().upper() if isinstance(v, str) else v),
+                    Field(pattern=r"^(HID|SC)-[0-9A-Z]{6}$")]
+    phone_last4: str = Field(pattern=r"^\d{4}$")
+
+
+class PatientTokenOut(BaseModel):
+    token: str
+    patient_id: str
+    name: str
+    health_id: str | None
+    language: str
+
+
+class EmergencyIn(BaseModel):
+    condition: Literal["LABOUR", "PREGNANCY_BLEEDING", "BREATHING", "CHEST_PAIN", "UNCONSCIOUS", "ACCIDENT",
+                       "CHILD_HIGH_FEVER", "SNAKE_BITE", "OTHER"]
+    note: str | None = Field(None, max_length=300)
+    # Where the patient is now (from the phone), for the nearest hospital.
+    latitude: float | None = Field(None, ge=-90, le=90)
+    longitude: float | None = Field(None, ge=-180, le=180)
+    pickup_note: str | None = Field(None, max_length=300)
+
+
+class EmergencyOut(BaseModel):
+    referral_code: str
+    hospital_name: str
+    hospital_phone: str | None
+    hospital_address: str | None
+    service: str
+    bed_held: bool
+    ambulance_requested: bool  # the hospital's own ambulance was asked to come
+    call: str = "108"
+    precautions: list[str]
+    reasons: list[str]  # why this hospital
+    already_open: bool = False  # an emergency was already booked; this is that one

@@ -17,8 +17,21 @@ class Settings(BaseSettings):
     environment: str = "development"
     secret_key: str = "dev-only-secret-change-me-before-production"
 
-    # Background job that flags silent referrals and overdue follow-ups.
+    # Background job that flags silent referrals and overdue follow-ups, sends dose
+    # reminders and bed-count reminders. With several servers, set it to false on all of
+    # them and run the job once instead: `python -m app.watchdog` (e.g. a Render cron job),
+    # or have a free scheduler call POST /api/v1/watchdog/tick with the cron secret.
     watchdog_enabled: bool = True
+    # Secret for POST /watchdog/tick (empty = that endpoint is off).
+    cron_secret: str = ""
+
+    # SMS (India). Empty = no SMS: messages go by email when an address is known.
+    # Fast2SMS: put the API key here. Phone-number login also needs this.
+    sms_api_key: str = ""
+    sms_provider: str = "fast2sms"
+    # Shared store for rate limits when the API runs on several servers, e.g.
+    # redis://red-xxxx:6379. Empty = each server counts on its own (fine for one server).
+    redis_url: str = ""
 
     access_token_minutes: int = 15
     refresh_token_days: int = 7
