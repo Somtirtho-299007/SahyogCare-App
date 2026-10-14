@@ -76,14 +76,39 @@ def send_via_relay(to: str, subject: str, text: str) -> None:
     """Send through the Google Apps Script relay (your own Gmail, free, over HTTPS)."""
     payload = json.dumps({"secret": settings.email_relay_secret, "to": to, "subject": subject,
                           "text": text}).encode()
-    request = urllib.request.Request(settings.email_relay_url, data=payload,
+    url = settings.email_relay_url.strip()
+    request = urllib.request.Request(url, data=payload,
                                      headers={"content-type": "application/json"}, method="POST")
-    # Apps Script answers through a redirect; urllib follows it and we read the final text.
-    with urllib.request.urlopen(request, timeout=20) as response:
-        answer = response.read()[:200].decode(errors="replace").strip()
+    # Apps Script runs the script on the POST, then answers with a 302 to a page holding the
+    # result. We follow that redirect ourselves with a plain GET (no body, no extra headers).
+    opener = urllib.request.build_opener(_NoRedirect)
+    try:
+        with opener.open(request, timeout=20) as response:
+            answer = response.read()[:300].decode(errors="replace").strip()
+    except urllib.error.HTTPError as error:
+        location = error.headers.get("Location") if error.code in (301, 302, 303, 307, 308) else None
+        if not location:
+            body = error.read()[:300].decode(errors="replace")
+            log.error("Email relay HTTP %s: %s", error.code, body)
+            raise RuntimeError(f"Email relay HTTP {error.code}") from error
+        with urllib.request.urlopen(urllib.request.Request(location, method="GET"),
+                                    timeout=20) as response:
+            answer = response.read()[:300].decode(errors="replace").strip()
     if answer != "ok":
-        log.error("Email relay did not send: %s", answer)
-        raise RuntimeError(f"Email relay answered: {answer}")
+        if answer.lower().startswith("<!doctype") or answer.lower().startswith("<html"):
+            log.error("Email relay returned a Google page, not 'ok'. The web app is not open to "
+                      "everyone: in Apps Script, Deploy > Manage deployments > Edit, set 'Who has "
+                      "access' to 'Anyone' (not 'Anyone with Google account'), choose New version, "
+                      "Deploy, and put that /exec URL in SAHYOG_EMAIL_RELAY_URL. URL used ends: %s",
+                      url[-25:])
+        else:
+            log.error("Email relay did not send: %s", answer)
+        raise RuntimeError(f"Email relay answered: {answer[:80]}")
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: D102
+        return None
 
 
 def send_login_code(to: str, code: str) -> None:
