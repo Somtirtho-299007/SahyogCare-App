@@ -169,35 +169,47 @@ def test_bad_input_is_rejected(client):
 
 
 def test_login_email_goes_through_the_gmail_relay_when_set(client, monkeypatch):
-    """The free Gmail relay (Google Apps Script) is used before Brevo, and a refusal is an error."""
+    """The free Gmail relay (Google Apps Script) is used before Brevo. Like Apps Script, the fake
+    relay runs on the POST and answers with a 302; the result is read with a plain GET."""
     import json
-    import urllib.request
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
 
     from app.config import settings
 
-    sent = []
+    sent, state = [], {"answer": b"ok"}
 
-    class Answer:
-        def __init__(self, text):
-            self.text = text
+    class Relay(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
 
-        def __enter__(self):
-            return self
+        def do_POST(self):
+            sent.append(json.loads(self.rfile.read(int(self.headers["content-length"]))))
+            self.send_response(302)
+            self.send_header("Location", f"http://127.0.0.1:{self.server.server_port}/echo")
+            self.end_headers()
 
-        def __exit__(self, *a):
-            return False
+        def do_GET(self):
+            # Real Google answers a GET that still carries a body or a JSON type with a page.
+            if self.headers.get("content-length") or self.headers.get("content-type"):
+                body = b"<!DOCTYPE html><html>Google page</html>"
+            else:
+                body = state["answer"]
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(body)
 
-        def read(self):
-            return self.text
+    server = HTTPServer(("127.0.0.1", 0), Relay)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        monkeypatch.setattr(settings, "email_relay_url", f" http://127.0.0.1:{server.server_port}/exec ")
+        monkeypatch.setattr(settings, "email_relay_secret", "s3cret")
+        r = client.post(f"{API}/auth/otp/request", json={"email": "relay@example.com"})
+        assert r.status_code == 202
+        assert sent[0]["to"] == "relay@example.com" and sent[0]["secret"] == "s3cret" and "login code" in sent[0]["text"]
 
-    monkeypatch.setattr(settings, "email_relay_url", "https://script.google.com/macros/s/x/exec")
-    monkeypatch.setattr(settings, "email_relay_secret", "s3cret")
-    monkeypatch.setattr(urllib.request, "urlopen", lambda req, timeout=0: (sent.append(json.loads(req.data)), Answer(b"ok"))[1])
-    r = client.post(f"{API}/auth/otp/request", json={"email": "relay@example.com"})
-    assert r.status_code == 202
-    assert sent[0]["to"] == "relay@example.com" and sent[0]["secret"] == "s3cret" and "login code" in sent[0]["text"]
-
-    monkeypatch.setattr(urllib.request, "urlopen", lambda req, timeout=0: Answer(b"denied"))
-    from app.models import OtpCode  # noqa: F401  (a fresh address avoids the resend wait)
-    r = client.post(f"{API}/auth/otp/request", json={"email": "relay2@example.com"})
-    assert r.status_code == 503 and r.json()["error"]["code"] == "EMAIL_FAILED"
+        state["answer"] = b"denied"
+        r = client.post(f"{API}/auth/otp/request", json={"email": "relay2@example.com"})
+        assert r.status_code == 503 and r.json()["error"]["code"] == "EMAIL_FAILED"
+    finally:
+        server.shutdown()
