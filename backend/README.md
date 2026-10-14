@@ -104,6 +104,9 @@ The test accounts are `asha@`, `staff@`, `doctor@` and `coordinator@sahyogcare.t
 1. Open `POST /api/v1/auth/otp/request` → **Try it out** → body `{"email": "asha@sahyogcare.test"}` → **Execute**.
    In development the response contains `dev_code`, and the code is also printed in the server terminal.
 2. Open `POST /api/v1/auth/otp/verify` → body `{"email": "asha@sahyogcare.test", "code": "<the code>"}` → **Execute**.
+   The first time, the answer has the tokens and `new_code` (that account's personal code; keep it). After you
+   call `POST /me/code-seen`, later logins answer `code_required` + `code_token`: send both to `POST /api/v1/auth/code`
+   as `{"code_token": "...", "code": "<personal code>"}` to get the tokens.
 3. Copy `access_token` from the response, click **Authorize** (top right), paste it, and click **Authorize**.
 4. Now protected endpoints such as `GET /api/v1/facilities` and `GET /api/v1/me` work. The token lasts 15 minutes.
 
@@ -123,7 +126,7 @@ The test users' facility is Kalyani District Hospital, so refer to it in step 1.
 ## Areas (Nadia, Naihati)
 
 Each area is a separate world. An area's coordinator sees and approves only the
-people, hospitals, referrals, invite codes and beds of that area; ASHAs refer only
+people, hospitals, referrals and beds of that area; ASHAs refer only
 to hospitals in their own area. People choose their area when they sign up.
 
 - `SAHYOG_DISTRICTS=Nadia,Naihati`: the areas this deployment serves
@@ -134,13 +137,25 @@ to hospitals in their own area. People choose their area when they sign up.
 ## Who can log in
 
 Anyone with a real email. The first login creates the account; the person then
-asks for a role (ASHA, hospital staff with their hospital, doctor, coordinator)
-and every coordinator of the district sees the request in the app and approves
-or rejects it in one tap. Until approved, the account sees no records.
+asks for a role (ASHA, hospital staff with their hospital, or doctor) and every
+coordinator of the district sees the request in the app and approves or rejects
+it in one tap. Until approved, the account sees no records. Coordinators do not
+ask: they enter their area's office passphrase (`POST /office/join`).
+
+**Personal codes.** Every approved person gets their own permanent code
+(`XXXX-XXXX`, `app/staffcode.py`), shown once on their screen right after approval
+(`GET /me` → `new_code`, cleared by `POST /me/code-seen`). From then on every login is
+the email/SMS code **and** the personal code: `POST /auth/otp/verify` answers
+`{"code_required": true, "code_token": ...}` and `POST /auth/code` with
+`{"code_token", "code"}` returns the tokens. Codes are stored only as a keyed hash
+(unique index), 5 wrong tries per 10 minutes. The district office can reset a code
+(`POST /users/{id}/reset-code`) or switch a person off (`PATCH /users/{id}`
+`{"is_active": false}`). People who were approved before this change get their code
+at their next login. Group invite codes are gone.
 
 - `SAHYOG_COORDINATOR_EMAILS`: the first coordinator(s), comma-separated
 - `SAHYOG_AUTO_APPROVE_ASHA=true`: ASHAs are approved without waiting (they only ever see their own patients); other roles always need approval
-- Codes are emailed through Brevo (`SAHYOG_BREVO_API_KEY`) or SMTP; at most 10 code requests per minute per IP address
+- Codes are emailed through Brevo (`SAHYOG_BREVO_API_KEY`) or SMTP; at most 30 code requests per minute per IP address (a classroom on one Wi-Fi counts as one address). `SAHYOG_LOGIN_CODES_PER_MINUTE=60` raises it for a big test day
 
 ## Database changes (migrations)
 
