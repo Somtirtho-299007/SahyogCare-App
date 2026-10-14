@@ -46,8 +46,8 @@ def test_staff_sign_up_needs_approval(client, db, auth):
 
 def test_rejected_request_keeps_no_access(client, db, auth):
     me, _ = sign_up(client, "someone@gmail.com")
-    rid = post(client, "/access-requests", me, {"role": "COORDINATOR", "name": "Someone"}).json()["id"]
-    r = post(client, f"/access-requests/{rid}/reject", auth("COORDINATOR"), {"note": "Not from the district office"})
+    rid = post(client, "/access-requests", me, {"role": "FACILITY_STAFF", "facility_id": facility_id(db), "name": "Someone"}).json()["id"]
+    r = post(client, f"/access-requests/{rid}/reject", auth("COORDINATOR"), {"note": "Not from this hospital"})
     assert r.json()["status"] == "REJECTED"
     assert client.get(f"{API}/dashboard/summary", headers=me).status_code == 403
 
@@ -77,6 +77,8 @@ def test_switched_off_account_cannot_sign_in_again(client, db):
 
 
 def test_code_requests_are_rate_limited(client):
+    from app.rules import OTP_REQUESTS_PER_MINUTE as limit
+
     codes = [client.post(f"{API}/auth/otp/request", json={"email": f"p{i}@gmail.com"}).status_code
-             for i in range(11)]
-    assert codes[:10] == [202] * 10 and codes[10] == 429
+             for i in range(limit + 1)]
+    assert codes[:limit] == [202] * limit and codes[limit] == 429

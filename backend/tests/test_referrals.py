@@ -347,7 +347,9 @@ def test_patient_can_check_status_with_code_and_phone(client, db, auth):
 
 
 def test_public_lookup_is_rate_limited(client):
-    for _ in range(5):
+    from app.rules import PUBLIC_LOOKUPS_PER_MINUTE
+
+    for _ in range(PUBLIC_LOOKUPS_PER_MINUTE):
         client.post(f"{API}/public/referral-status", json={"code": "SC-ZZZZZZ", "phone_last4": "0000"})
     r = client.post(f"{API}/public/referral-status", json={"code": "SC-ZZZZZZ", "phone_last4": "0000"})
     assert r.status_code == 429 and r.json()["error"]["code"] == "RATE_LIMITED"

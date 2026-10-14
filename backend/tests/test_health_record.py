@@ -354,7 +354,7 @@ def test_staff_reminded_to_update_old_bed_counts_at_shift_change(client, db, aut
     from app.models import BedWard
 
     for w in db.scalars(select(BedWard)):
-        w.updated_at = utcnow() - timedelta(hours=10)
+        w.updated_at = at_local(8, 5) - timedelta(hours=10)  # old at the morning shift change
     db.commit()
     assert run_watchdog(db, now=at_local(14, 0))["bed_update_reminders"] == 0
     result = run_watchdog(db, now=at_local(8, 5))
