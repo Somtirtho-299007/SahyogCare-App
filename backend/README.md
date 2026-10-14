@@ -8,7 +8,24 @@ The plan behind this code is in [`../docs/WORKFLOW.md`](../docs/WORKFLOW.md); en
 
 The backend is complete and the frontend (`../src`) uses it. To run both together, see the main [README](../README.md#run-locally).
 
-**Beds, re-routing and ambulance (new):**
+**Health record, care chart and patient emergency (new):**
+- One patient = one record: the ASHA's register (`GET /patients/register`) lists everyone she looks after; every visit, referral, prescription and medicine stays under that record (`GET /patients/{id}/record`). Each patient gets a Health ID (`HID-XXXXXX`)
+- Home visits ("all OK") need no referral (`kind: HOME_VISIT`); the hospital can add new readings after the checkup (`kind: VITALS_UPDATE`, shown on the referral as `latest_vitals`)
+- Every reading carries LOW / NORMAL / HIGH against adult normal ranges (`GET /vital-ranges`, placeholders for a doctor to confirm)
+- Medical history with a timeline (`/patients/{id}/conditions`, `PATCH /conditions/{id}`: "fatty liver" → "resolved"); prescriptions entered by the ASHA with a photo of the paper (`/patients/{id}/prescriptions`)
+- Care chart: medicines (name, dose, quantity, times of day, before/after food, course length) and practices (pregnancy, after surgery, ...) (`/patients/{id}/care-items`); a course completes by itself after its last day, or `POST /care-items/{id}/end`
+- Dose reminders by SMS (or email) at dose times in the patient's language (Bengali, Hindi, English), never twice
+- Photos from the camera or gallery (`POST /photos`, `GET /photos/{id}`): patient identification, prescriptions, and the ASHA's own photo at sign-up for the district office to check
+- `POST /patients/{id}/deceased` (cause and time of death): stops every open referral (status `DECEASED`), releases the bed and ambulance, stops medicines, tells the hospital and the ASHA
+- The patient signs in with Health ID + last 4 phone digits (`POST /public/patient-login`) to see their record (`GET /public/me/record`)
+- Night emergency (`POST /public/emergency`): the system picks the best hospital for the condition (free bed, distance, service running), holds a bed, asks for its ambulance, alerts the hospital, the ASHA (app + SMS/email) and the district office, and re-routes by itself if that hospital rejects. Already referred? That hospital is told it is now an emergency instead
+
+**Scaling:**
+- Phone-number login with SMS codes when `SAHYOG_SMS_API_KEY` is set; families get SMS when accepted and when the ambulance is sent
+- Staff are reminded at shift change (8 am / 8 pm) to update old bed counts
+- With several servers: set `SAHYOG_WATCHDOG_ENABLED=false` and run `python -m app.watchdog` from a cron job, or let a free scheduler call `POST /watchdog/tick` with `X-Cron-Secret`; a database lock stops two runs at once. `SAHYOG_REDIS_URL` shares rate limits between servers (`pip install redis`)
+
+**Beds, re-routing and ambulance:**
 - Each hospital has wards (General, Emergency, Maternity, Paediatric, ICU) with total, occupied, held and free beds; staff update their own hospital, the coordinator any hospital in the district (`PUT /facilities/{id}/beds/{ward}`)
 - Creating a referral **holds a bed** in the right ward (1 h Emergency, 6 h Priority, 48 h Routine until accepted; then until the patient is due to arrive). Arrival turns it into an occupied bed; rejection or re-routing releases it; the watchdog releases unused holds and suggests another hospital
 - A full ward refuses the referral with `NO_BEDS_AVAILABLE` and the 3 best alternatives; `allow_without_bed: true` sends it anyway. A "no beds" rejection marks the ward full
@@ -111,7 +128,7 @@ to hospitals in their own area. People choose their area when they sign up.
 
 - `SAHYOG_DISTRICTS=Nadia,Naihati`: the areas this deployment serves
 - `SAHYOG_COORDINATOR_EMAILS=you@gmail.com:Nadia,officer@gmail.com:Naihati`: first coordinator of each area
-- `SAHYOG_OFFICE_PASSPHRASES=Naihati:<phrase>,Nadia:<phrase>`: a fixed passphrase per area that only its district office knows; entering it makes that person the area's coordinator at once (5 tries per 10 minutes)
+- District office passphrases are built in (`app/offices.py`, stored only as salted hashes): one permanent passphrase per area, no server setting needed. Entering it makes that person the area's coordinator at once (5 tries per 10 minutes). New area or leaked passphrase: `python -m app.offices new "Area"` and add the printed line. `SAHYOG_OFFICE_PASSPHRASES` is optional and only adds or overrides one on the server
 - `SAHYOG_DEMO_DATA=false` on the live server: hides demo hospitals and switches off the `@sahyogcare.test` accounts
 
 ## Who can log in
@@ -167,7 +184,10 @@ Copy `.env.example` to `.env` to change settings. Never commit `.env`.
 | `SAHYOG_ENVIRONMENT` | `development` | `production` refuses to start with the default secret |
 | `SAHYOG_SECRET_KEY` | `dev-only-secret-change-me-before-production` | Signing key for tokens, login codes and referral passes — at least 32 random characters in production |
 | `SAHYOG_SMTP_HOST` etc. | empty | Email server for login codes; empty means codes are printed in the terminal (development only) |
-| `SAHYOG_WATCHDOG_ENABLED` | `true` | Background check for silent referrals and overdue follow-ups every 5 minutes |
+| `SAHYOG_WATCHDOG_ENABLED` | `true` | Background job every 5 minutes: silent referrals, overdue follow-ups, dose reminders, bed reminders |
+| `SAHYOG_SMS_API_KEY` | empty | Fast2SMS key: SMS reminders, family alerts and phone login. Empty = email only |
+| `SAHYOG_CRON_SECRET` | empty | Secret for `POST /watchdog/tick` (outside scheduler); empty = endpoint off |
+| `SAHYOG_REDIS_URL` | empty | Shared rate limits for several servers |
 
 ## Deploy on Render
 
