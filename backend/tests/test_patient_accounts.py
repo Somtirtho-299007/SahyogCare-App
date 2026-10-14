@@ -133,3 +133,16 @@ def test_patient_sign_in_is_rate_limited(client):
         client.post(f"{API}/public/login/request", json={"phone": f"90000{i:05d}"})
     r = client.post(f"{API}/public/login/request", json={"phone": "9000099999"})
     assert r.status_code == 429 and r.json()["error"]["code"] == "RATE_LIMITED"
+
+
+def test_sms_refused_by_the_service_falls_back_to_the_asha(client, db, auth, monkeypatch):
+    """Fast2SMS answers 200 with return:false when it will not send (e.g. no balance)."""
+    from app import messaging
+    from app.config import settings
+
+    make_patient(client, auth("WORKER"))
+    monkeypatch.setattr(settings, "sms_api_key", "test-key")
+    monkeypatch.setattr(messaging, "_post",
+                        lambda *a, **k: b'{"return": false, "message": "Complete a transaction first"}')
+    assert ask(client) == {"channel": "asha", "dev_code": None}
+    assert client.get(f"{API}/health").json()["sms"] == "on"
