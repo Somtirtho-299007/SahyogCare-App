@@ -19,7 +19,7 @@ SahyogCare coordinates existing workflows. It does not diagnose, replace hospita
 | `DOCTOR` | Medical Team | Record consultation and outcome, close |
 | `COORDINATOR` | (later screen) | District totals, escalate overdue follow-ups, bottleneck view |
 
-Patients have **no account**. They view one referral with the referral code plus the last 4 digits of their phone number.
+Patients have **their own account**, opened with the mobile number (or email) their ASHA registered and a one-time code. Inside it they see everything that is theirs: every referral, open and closed, their medicines, history and readings. A referral code alone opens nothing. See §5 "Patient accounts".
 
 Staff accounts are created in advance. Nobody can self-register as Medical Team.
 
@@ -41,7 +41,7 @@ ASHA:  follow-up Complete → CLOSED
        Missed / deadline passed → OVERDUE → COORDINATOR escalates → CLOSED
 
 Watchdog: any referral that goes silent alerts the ASHA, then the Coordinator.
-Patient: code + last 4 phone digits → own referral status.
+Patient: own mobile number + one-time code → own account (all their referrals and their health record).
 ```
 
 ## 4. Referral state machine
@@ -72,7 +72,7 @@ The start screen asks one thing: **who are you?** Three big doors:
 
 | Door | Who | How they get in |
 |---|---|---|
-| Patient | Anyone | Straight in. Health ID or referral code + last 4 digits of the phone; no account. |
+| Patient | Anyone registered by an ASHA | Mobile number (or email on the record) → 6-digit code → their own account. A family sharing one phone picks who is signing in. |
 | Health worker | ASHA, hospital staff, doctor | Email (or mobile, when SMS is on) → 6-digit code → **personal code** |
 | District office | Coordinators | Same as health worker; the first time, the area's office passphrase instead of a request |
 
@@ -141,10 +141,15 @@ The ASHA decides. The server may suggest using explicit rules (e.g. SpO₂ < 90 
 
 Alerts are deduplicated: one alert per referral per kind.
 
-### Patient lookup
-- Code and last 4 phone digits must both match.
-- More than 5 attempts per minute from one IP are blocked.
-- Returns status timeline, facility name and checklist only; never vitals or symptoms.
+### Patient accounts
+- **One person = one account = one record.** The ASHA registers the person once; every referral, visit, prescription and medicine goes under that record. A finished referral is closed for good; a new problem is a new referral under the same person.
+- **Sign-in:** the patient taps *Patient*, types the mobile number the ASHA registered (or the email on their record) and gets a 6-digit code.
+  - By SMS when the SMS service is set up (`SAHYOG_SMS_API_KEY`), by email for an email.
+  - Without SMS, the screen says "ask your ASHA": she opens the patient's record and taps **Sign-in code for the patient**; the code shows on her phone (valid 15 minutes, once) and the patient types it on theirs.
+- **Shared phones:** if several people are registered on one number (a family), after the code the patient taps their own name. Only people on that number can be chosen.
+- **What they see:** *My referrals* (open ones with the journey, the hospital's phone, ambulance, follow-up date and the code to show at the desk; past ones below) and *My health* (medicines timetable, illnesses, prescriptions, readings). The night emergency button is on top.
+- **Safety:** codes are hashed, expire in 5 minutes (15 for an ASHA-shown code), lock after 5 wrong tries, and only the newest code works. The answer to "send me a code" is the same whether or not the number is registered. 30 requests per minute per IP. A patient's token opens only that patient's record; staff tokens and patient tokens never mix.
+- **Removed:** looking up a referral with its code + last 4 phone digits, and signing in with Health ID + last 4 digits. Both could be guessed by anyone who saw a code.
 
 ### Audit and privacy
 - Every write logs actor, action, target and time.

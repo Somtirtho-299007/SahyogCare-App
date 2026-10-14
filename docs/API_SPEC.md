@@ -127,13 +127,19 @@ Creating a referral holds a bed in the ward the service needs (`bed` in the resp
 
 `POST /referrals/{id}/reject` takes `{"reason": "SERVICE_UNAVAILABLE", "note": "..."}`. Reasons `SERVICE_UNAVAILABLE` and `NO_DOCTOR_AVAILABLE` mark the requested service unavailable at that facility.
 
-## Public patient lookup
+## Patient accounts
 
 | Method | Route | Role | Purpose |
 |---|---|---|---|
-| POST | `/public/referral-status` | Public, rate-limited | `{"code": "SC-7K3M9Q", "phone_last4": "4821"}` → status timeline, facility name, checklist |
+| POST | `/public/login/request` | Public, rate-limited | `{"phone": "9876543210"}` or `{"email": ...}` → `{"channel": "sms" \| "email" \| "asha"}`; sends a 6-digit code if anyone is registered there |
+| POST | `/public/login/verify` | Public, rate-limited | `{phone \| email, "code"}` → `{"signed_in": {token, patient_id, name, ...}}`, or for a shared phone `{"choose_token", "people": [{id, name, age, sex}]}` |
+| POST | `/public/login/choose` | Public (needs `choose_token`) | `{"choose_token", "patient_id"}` → the patient's token |
+| POST | `/patients/{id}/sign-in-code` | ASHA / staff / coordinator with access | One-time code for the patient to type (no SMS service), valid 15 minutes |
+| GET | `/public/me/referrals` | Patient token | Every referral of the patient, newest first: status, timeline, hospital and phone, ambulance, follow-up date |
+| GET | `/public/me/record` | Patient token | The patient's whole health record |
+| POST | `/public/emergency` | Patient token | Night emergency: books the best hospital |
 
-Never returns vitals, symptoms or other patients' data. Both values must match.
+There is no lookup by referral code: a code alone never opens anything.
 
 ### Create referral
 
