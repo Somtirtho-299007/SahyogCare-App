@@ -17,7 +17,7 @@ The backend is complete and the frontend (`../src`) uses it. To run both togethe
 - Dose reminders by SMS (or email) at dose times in the patient's language (Bengali, Hindi, English), never twice
 - Photos from the camera or gallery (`POST /photos`, `GET /photos/{id}`): patient identification, prescriptions, and the ASHA's own photo at sign-up for the district office to check
 - `POST /patients/{id}/deceased` (cause and time of death): stops every open referral (status `DECEASED`), releases the bed and ambulance, stops medicines, tells the hospital and the ASHA
-- The patient signs in with Health ID + last 4 phone digits (`POST /public/patient-login`) to see their record (`GET /public/me/record`)
+- Patients have their own account: registered mobile (or email) + one-time code (`POST /public/login/request`, `/public/login/verify`, `/public/login/choose` for a shared family phone; without SMS the ASHA shows a code from `POST /patients/{id}/sign-in-code`). They see all their referrals (`GET /public/me/referrals`) and their record (`GET /public/me/record`)
 - Night emergency (`POST /public/emergency`): the system picks the best hospital for the condition (free bed, distance, service running), holds a bed, asks for its ambulance, alerts the hospital, the ASHA (app + SMS/email) and the district office, and re-routes by itself if that hospital rejects. Already referred? That hospital is told it is now an emergency instead
 
 **Scaling:**
@@ -55,7 +55,7 @@ The backend is complete and the frontend (`../src`) uses it. To run both togethe
 - Every change is recorded as an event and the ASHA gets a notification (`/notifications`)
 - Learning from rejections: "service unavailable" or "no doctor" marks that service unavailable, and search ranks that facility last; accepting marks it available
 - Signed QR referral pass (`/referrals/{id}/pass`) and scanning at the desk (`/referral-passes/verify`), including offline scans synced later
-- Public patient lookup with code + last 4 phone digits, rate-limited (`/public/referral-status`)
+- Patients see their referrals only inside their own account (no lookup by referral code)
 - Everyone only sees their own records: ASHA her referrals, facility staff their facility, coordinator their district
 
 **Login and roles:**
@@ -118,7 +118,7 @@ Log in as each role in turn (see above) and use **Authorize** with that role's t
 2. **Staff** (`staff@`, Kalyani District Hospital): `GET /referrals?open=true` → `POST /referrals/{id}/accept` → `POST /referrals/{id}/arrival`.
 3. **Doctor** (`doctor@`): `POST /referrals/{id}/consultation` → `POST /referrals/{id}/outcome`.
 4. **ASHA** again: `GET /notifications` shows each step; `POST /referrals/{id}/close`.
-5. **No login:** `POST /public/referral-status` with the code and the last 4 digits of the patient's phone.
+5. **Patient:** `POST /public/login/request` with the patient's phone (the answer has `dev_code` in development), then `POST /public/login/verify`; use the token for `GET /public/me/referrals`.
 6. **Coordinator** (`coordinator@`): `GET /dashboard/summary` shows district totals and which facility is slowest; `POST /watchdog/run` checks for silent referrals.
 
 The test users' facility is Kalyani District Hospital, so refer to it in step 1.
