@@ -78,7 +78,8 @@ export function EntryScreen({ onSignIn, onTour }) {
     go("id");
   };
   // Patients sign in with the mobile their ASHA registered (or an email on their record).
-  const validId = isEmail(who) || ((phoneOk || patientDoor) && isMobile(who));
+  // Patients sign in with the mobile number their ASHA registered; staff with email (or mobile, when SMS is on).
+  const validId = patientDoor ? isMobile(who) : isEmail(who) || (phoneOk && isMobile(who));
   const send = async () => {
     if (!validId || busy) return;
     setBusy(true);
@@ -204,12 +205,13 @@ export function EntryScreen({ onSignIn, onTour }) {
               className="big-input"
               data-tour="email"
               value={who}
-              onChange={(e) => setWho(e.target.value)}
+              onChange={(e) => setWho(patientDoor ? e.target.value.replace(/\D/g, "").slice(0, 10) : e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && send()}
               placeholder={patientDoor ? "98XXXXXXXX" : phoneOk ? "you@gmail.com / 98XXXXXXXX" : "you@gmail.com"}
-              type={phoneOk || patientDoor ? "text" : "email"}
-              inputMode={patientDoor ? "tel" : phoneOk ? "text" : "email"}
-              autoComplete={phoneOk || patientDoor ? "username" : "email"}
+              type={patientDoor ? "tel" : phoneOk ? "text" : "email"}
+              inputMode={patientDoor ? "numeric" : phoneOk ? "text" : "email"}
+              autoComplete={patientDoor ? "tel" : phoneOk ? "username" : "email"}
+              maxLength={patientDoor ? 10 : undefined}
               autoFocus
             />
             <button className="primary-btn big-btn" onClick={send} disabled={!validId || busy}>
@@ -254,7 +256,7 @@ export function EntryScreen({ onSignIn, onTour }) {
               </div>
             )}
             <button className="link-btn" onClick={() => go("id")}>
-              ← {t("changeEmail")}
+              ← {patientDoor ? t("changeMobile") : phoneOk ? t("changeEmailOrMobile") : t("changeEmail")}
             </button>
           </div>
         )}
