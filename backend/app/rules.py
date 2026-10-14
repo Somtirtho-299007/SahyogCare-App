@@ -219,3 +219,35 @@ PUBLIC_LOOKUPS_PER_MINUTE = 5
 
 # How often the background watchdog runs.
 WATCHDOG_EVERY = timedelta(minutes=5)
+
+
+# ---------- Beds (placeholders: to be agreed with the district health office) ----------
+
+
+class Ward(StrEnum):
+    GENERAL = "GENERAL"
+    EMERGENCY = "EMERGENCY"
+    MATERNITY = "MATERNITY"
+    PAEDIATRIC = "PAEDIATRIC"
+    ICU = "ICU"
+
+
+# Which ward a referred patient needs, by requested service.
+# Services not listed here (e.g. Diagnostics) need no bed.
+SERVICE_WARD: dict[str, Ward] = {
+    "general medicine": Ward.GENERAL,
+    "emergency": Ward.EMERGENCY,
+    "maternity": Ward.MATERNITY,
+    "paediatrics": Ward.PAEDIATRIC,
+    "pediatrics": Ward.PAEDIATRIC,
+    "icu": Ward.ICU,
+    "critical care": Ward.ICU,
+}
+
+
+def ward_for_service(service: str) -> Ward | None:
+    return SERVICE_WARD.get(service.strip().lower())
+
+
+# Bed counts older than this are shown as "not confirmed recently".
+BED_DATA_STALE_AFTER = timedelta(hours=12)

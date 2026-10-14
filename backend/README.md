@@ -92,6 +92,19 @@ Log in as each role in turn (see above) and use **Authorize** with that role's t
 
 The test users' facility is Kalyani District Hospital, so refer to it in step 1.
 
+## Database changes (migrations)
+
+The server upgrades the database by itself on every start (`app/migrate.py`), so a
+deploy keeps existing data. When a change adds or alters a table in `app/models.py`,
+also add a migration and commit it with the change:
+
+```bash
+python -m alembic revision --autogenerate -m "short description"
+```
+
+Check the new file in `migrations/versions/` before committing. `tests/test_migrations.py`
+fails if the models and migrations ever disagree.
+
 ## Tests
 
 Run the tests:

@@ -18,7 +18,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
-from app.rules import Role, Status, Triage
+from app.rules import Role, Status, Triage, Ward
 
 
 def new_id() -> str:
@@ -47,10 +47,17 @@ class Facility(Base):
     phone: Mapped[str | None] = mapped_column(String(20))
     beds: Mapped[int | None] = mapped_column(Integer)
     hfr_id: Mapped[str | None] = mapped_column(String(40))  # ABDM Health Facility Registry, later
+    # Approximate location, used to rank nearby hospitals first.
+    latitude: Mapped[float | None] = mapped_column(Float)
+    longitude: Mapped[float | None] = mapped_column(Float)
+    has_ambulance: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     services: Mapped[list["FacilityService"]] = relationship(
         back_populates="facility", cascade="all, delete-orphan", order_by="FacilityService.service"
+    )
+    wards: Mapped[list["BedWard"]] = relationship(
+        back_populates="facility", cascade="all, delete-orphan", order_by="BedWard.ward"
     )
 
 
@@ -247,3 +254,24 @@ class AuditLog(Base):
     target_type: Mapped[str] = mapped_column(String(40))
     target_id: Mapped[str] = mapped_column(ID)
     at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
+class BedWard(Base):
+    """Bed counts for one ward of one hospital, kept up to date by its staff (or the coordinator)."""
+
+    __tablename__ = "bed_wards"
+    __table_args__ = (
+        UniqueConstraint("facility_id", "ward"),
+        _enum_check("ward", list(Ward)),
+        CheckConstraint("total >= 0 AND occupied >= 0 AND occupied <= total", name="ck_bed_counts"),
+    )
+
+    id: Mapped[str] = mapped_column(ID, primary_key=True, default=new_id)
+    facility_id: Mapped[str] = mapped_column(ForeignKey("facilities.id", ondelete="CASCADE"), index=True)
+    ward: Mapped[str] = mapped_column(String(20))
+    total: Mapped[int] = mapped_column(Integer)
+    occupied: Mapped[int] = mapped_column(Integer, default=0)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_by_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"))
+
+    facility: Mapped[Facility] = relationship(back_populates="wards")

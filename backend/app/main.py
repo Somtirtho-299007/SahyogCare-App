@@ -13,9 +13,11 @@ from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from app import __version__, models  # noqa: F401  (models must be imported so tables are registered)
+from app.accounts import ensure_coordinators
 from app.config import settings
-from app.db import Base, SessionLocal, engine
+from app.db import SessionLocal
 from app.errors import install_error_handlers
+from app.migrate import run_migrations
 from app.routers import (
     auth,
     facilities,
@@ -27,6 +29,7 @@ from app.routers import (
     public,
     referrals,
     sync,
+    users,
 )
 from app.watchdog import watchdog_loop
 
@@ -35,9 +38,10 @@ logging.basicConfig(level=logging.INFO)
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    # Step 1 creates tables directly. Before the first production deploy with real
-    # schema changes, switch to Alembic migrations.
-    Base.metadata.create_all(engine)
+    # Create or upgrade the database tables (see app/migrate.py and migrations/versions).
+    run_migrations()
+    with SessionLocal() as db:
+        ensure_coordinators(db)
     task = asyncio.create_task(watchdog_loop(SessionLocal)) if settings.watchdog_enabled else None
     yield
     if task:
@@ -65,6 +69,7 @@ app.include_router(followups.router, prefix=API)
 app.include_router(insights.router, prefix=API)
 app.include_router(sync.router, prefix=API)
 app.include_router(public.router, prefix=API)
+app.include_router(users.router, prefix=API)
 
 
 @app.get("/", include_in_schema=False)

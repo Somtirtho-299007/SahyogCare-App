@@ -13,15 +13,25 @@ os.environ["SAHYOG_DATABASE_URL"] = os.environ.get("SAHYOG_TEST_DATABASE_URL", f
 
 from fastapi.testclient import TestClient  # noqa: E402
 
+from sqlalchemy import text  # noqa: E402
+
 from app.db import Base, SessionLocal, engine  # noqa: E402
 from app.main import app  # noqa: E402
+from app.migrate import run_migrations  # noqa: E402
 from app.seed import seed  # noqa: E402
+
+
+def reset_database():
+    """Empty database built by the real migrations, exactly as on a fresh deploy."""
+    Base.metadata.drop_all(engine)
+    with engine.begin() as conn:
+        conn.execute(text("DROP TABLE IF EXISTS alembic_version"))
+    run_migrations()
 
 
 @pytest.fixture()
 def db():
-    Base.metadata.drop_all(engine)
-    Base.metadata.create_all(engine)
+    reset_database()
     with SessionLocal() as session:
         seed(session)
         yield session
@@ -44,8 +54,12 @@ def auth(db):
     from app.models import User
     from app.security import access_token_for
 
+    # The original test users (Kalyani District Hospital for staff and doctor).
+    emails = {"WORKER": "asha@sahyogcare.test", "FACILITY_STAFF": "staff@sahyogcare.test",
+              "DOCTOR": "doctor@sahyogcare.test", "COORDINATOR": "coordinator@sahyogcare.test"}
+
     def _headers(role: str) -> dict[str, str]:
-        user = db.scalar(select(User).where(User.role == role))
+        user = db.scalar(select(User).where(User.email == emails[role]))
         return {"Authorization": f"Bearer {access_token_for(user)}"}
 
     return _headers

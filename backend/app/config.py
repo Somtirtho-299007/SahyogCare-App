@@ -36,6 +36,15 @@ class Settings(BaseSettings):
     # is only visible to whoever can read the server logs, never sent to the browser.
     log_login_codes: bool = False
 
+    # Brevo (brevo.com) email API key. Sends over HTTPS, so it works on hosts that
+    # block SMTP ports (Render's free plan does). Used instead of SMTP when set.
+    brevo_api_key: str = ""
+
+    # Real email addresses (comma-separated) that are made coordinators when the
+    # server starts. The coordinator then adds every other user from the app.
+    coordinator_emails: str = ""
+    coordinator_district: str = "Nadia"
+
     @property
     def is_development(self) -> bool:
         return self.environment == "development"
@@ -48,6 +57,10 @@ class Settings(BaseSettings):
             if url.startswith(prefix):
                 return "postgresql+psycopg://" + url[len(prefix):]
         return url
+
+    @property
+    def coordinator_email_list(self) -> list[str]:
+        return [e.strip().lower() for e in self.coordinator_emails.split(",") if e.strip()]
 
     @property
     def cors_origin_list(self) -> list[str]:

@@ -13,7 +13,7 @@ def test_health(client):
 
 
 def test_seed_is_repeatable(db):
-    assert seed(db) == {"facilities": 0, "users": 0}
+    assert seed(db) == {"facilities": 0, "users": 0, "wards": 0}
     assert len(db.scalars(select(Facility)).all()) == 4
     assert {u.role for u in db.scalars(select(User))} == {"WORKER", "FACILITY_STAFF", "DOCTOR", "COORDINATOR"}
 

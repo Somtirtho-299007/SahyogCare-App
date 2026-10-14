@@ -16,6 +16,15 @@ class ServiceOut(BaseModel):
     stale: bool  # True when the availability information is older than the stale limit
 
 
+class WardOut(BaseModel):
+    ward: str  # GENERAL | EMERGENCY | MATERNITY | PAEDIATRIC | ICU
+    total: int
+    occupied: int
+    free: int
+    updated_at: datetime
+    stale: bool  # True when the counts have not been confirmed recently
+
+
 class FacilityOut(BaseModel):
     id: str
     name: str
@@ -23,7 +32,45 @@ class FacilityOut(BaseModel):
     district: str
     phone: str | None
     beds: int | None
+    latitude: float | None = None
+    longitude: float | None = None
+    has_ambulance: bool = False
     services: list[ServiceOut]
+    wards: list[WardOut] = Field(default_factory=list)
+
+
+Ward = Literal["GENERAL", "EMERGENCY", "MATERNITY", "PAEDIATRIC", "ICU"]
+
+
+class WardIn(BaseModel):
+    total: int = Field(ge=0, le=5000)
+    occupied: int = Field(ge=0, le=5000)
+
+
+class WardCountsIn(WardIn):
+    ward: Ward
+
+
+class FacilityIn(BaseModel):
+    """A hospital added by the coordinator (e.g. from the National Hospital Directory)."""
+
+    name: str = Field(min_length=2, max_length=200)
+    type: str = Field(min_length=2, max_length=80)
+    phone: str | None = Field(None, max_length=20)
+    latitude: float | None = Field(None, ge=-90, le=90)
+    longitude: float | None = Field(None, ge=-180, le=180)
+    has_ambulance: bool = False
+    hfr_id: str | None = Field(None, max_length=40)
+    services: list[Annotated[str, Field(min_length=1, max_length=80)]] = Field(min_length=1, max_length=40)
+    wards: list[WardCountsIn] = Field(default_factory=list, max_length=10)
+
+
+class FacilityUpdateIn(BaseModel):
+    phone: str | None = Field(None, max_length=20)
+    latitude: float | None = Field(None, ge=-90, le=90)
+    longitude: float | None = Field(None, ge=-180, le=180)
+    has_ambulance: bool | None = None
+    add_services: list[Annotated[str, Field(min_length=1, max_length=80)]] = Field(default_factory=list, max_length=40)
 
 
 class HealthOut(BaseModel):
