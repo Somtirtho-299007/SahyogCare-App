@@ -10,6 +10,7 @@ Sending never raises: a failed message must not stop a referral being saved.
 import json
 import logging
 import smtplib
+import urllib.error
 import urllib.parse
 import urllib.request
 from email.message import EmailMessage
@@ -34,18 +35,39 @@ def email_enabled() -> bool:
     return bool(settings.brevo_api_key or settings.smtp_host)
 
 
-def _post(url: str, data: bytes, headers: dict[str, str]) -> None:
+def _post(url: str, data: bytes, headers: dict[str, str]) -> bytes:
     request = urllib.request.Request(url, data=data, headers=headers, method="POST")
-    with urllib.request.urlopen(request, timeout=15) as response:  # raises on 4xx/5xx
-        if response.status >= 300:
-            raise RuntimeError(f"{url} answered {response.status}")
+    try:
+        with urllib.request.urlopen(request, timeout=15) as response:  # raises on 4xx/5xx
+            if response.status >= 300:
+                raise RuntimeError(f"{url} answered {response.status}")
+            return response.read()
+    except urllib.error.HTTPError as exc:
+        # Keep the service's own reason (e.g. "invalid authentication") for the log.
+        raise RuntimeError(f"{url} answered {exc.code}: {exc.read()[:300]!r}") from exc
+
+
+class SmsRefused(RuntimeError):
+    """The SMS service answered but did not send (no balance, route not allowed, bad key...)."""
 
 
 def _send_sms(phone: str, text: str) -> None:
     # Fast2SMS "quick" route: unicode text (Bengali/Hindi) to a 10-digit Indian number.
     body = urllib.parse.urlencode({"route": "q", "message": text, "language": "unicode", "numbers": phone}).encode()
-    _post(FAST2SMS_URL, body, {"authorization": settings.sms_api_key,
-                                "content-type": "application/x-www-form-urlencoded"})
+    raw = _post(FAST2SMS_URL, body, {"authorization": settings.sms_api_key,
+                                      "content-type": "application/x-www-form-urlencoded"})
+    # Fast2SMS answers HTTP 200 even when it refuses, with {"return": false, "message": "..."}:
+    # e.g. a new account must recharge before the API route works. Treat that as a failure.
+    try:
+        answer = json.loads(raw or b"{}")
+    except ValueError:
+        answer = {}
+    if answer.get("return") is False:
+        reason = answer.get("message")
+        if isinstance(reason, list):
+            reason = " ".join(map(str, reason))
+        log.error("SMS service refused to send: %s", reason)
+        raise SmsRefused(str(reason or "SMS service refused the message"))
 
 
 def _send_email(to: str, subject: str, text: str) -> None:
@@ -105,6 +127,11 @@ def send_login_code_sms(phone: str, code: str) -> None:
             return
         raise RuntimeError("SMS is not configured")
     _send_sms(phone, text)
+
+
+def check_sms() -> str:
+    """For the health page: off (no key) or on. Never shows the key."""
+    return "on" if sms_enabled() else ("log-only" if settings.log_login_codes else "off")
 
 
 # ---------- Message texts (English, Bengali, Hindi) ----------

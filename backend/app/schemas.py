@@ -107,6 +107,8 @@ class HealthOut(BaseModel):
     status: str
     database: str
     version: str
+    sms: str = "off"  # on | off | log-only (codes only in the server log)
+    email: str = "off"
 
 
 # ---------- Auth ----------
