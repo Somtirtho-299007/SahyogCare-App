@@ -7,7 +7,7 @@ pointed to the national ambulance number (108) instead of waiting.
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from app import ambulance
+from app import ambulance, messaging
 from app.access import get_referral_for
 from app.db import get_db
 from app.errors import ApiError
@@ -72,6 +72,10 @@ def dispatch(referral_id: str, body: AmbulanceDispatchIn,
     notify(db, referral.created_by_id, referral, "AMBULANCE_DISPATCHED",
            f"{referral.code}: ambulance on the way for {patient.name}, about {body.eta_minutes} min."
            + (f" Driver: {body.driver_phone}." if body.driver_phone else ""))
+    # The family gets the vehicle number and driver's phone by SMS (or email), in their language.
+    messaging.send(phone=patient.phone, email=patient.email, subject="SahyogCare: ambulance on the way",
+                   text=messaging.text("ambulance", patient.language, vehicle=body.vehicle_number or "",
+                                       name=patient.name, eta=body.eta_minutes, driver=body.driver_phone or "-"))
     commit(db)
     return referral_out(db, referral)
 

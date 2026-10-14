@@ -1,32 +1,44 @@
-"""Patients and encounters (visits). See docs/WORKFLOW.md, "Patients and encounters"."""
+"""Patients and their visits. See docs/WORKFLOW.md, "Patients and encounters".
+
+One patient = one record. The ASHA registers each person she looks after once;
+every visit, referral, prescription and medicine of that person stays under the
+same record, so the history is never split across "random" entries.
+"""
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
-from app.access import get_patient_for, patient_scope
+from app.access import get_patient_for, get_referral_for, patient_scope
 from app.db import get_db
 from app.errors import ApiError
 from app.models import AuditLog, Encounter, Medicine, Patient, User
+from app.records import encounter_out, patient_record, record_death, register_rows, unique_health_id, vital_ranges
 from app.rules import Role, triage_suggestion, validate_vitals
-from app.schemas import EncounterIn, EncounterOut, MedicineOut, PatientCreatedOut, PatientIn, PatientOut, Vitals
+from app.schemas import (
+    DeceasedIn,
+    EncounterIn,
+    EncounterOut,
+    PatientCreatedOut,
+    PatientIn,
+    PatientOut,
+    PatientRecordOut,
+    PatientUpdateIn,
+    RegisterRowOut,
+    VitalRangeOut,
+)
 from app.security import current_user, require_roles
-from app.timeutil import as_utc, utcnow
+from app.timeutil import utcnow
+from app.workflow import commit
 
 router = APIRouter(prefix="/patients", tags=["patients"])
+ranges_router = APIRouter(tags=["patients"])
 
 
-def _encounter_out(enc: Encounter, suggestion: str | None = None) -> EncounterOut:
-    return EncounterOut(
-        id=enc.id,
-        patient_id=enc.patient_id,
-        reason=enc.reason,
-        triage=enc.triage,
-        vitals=Vitals(**{f: getattr(enc, f) for f in Vitals.model_fields}),
-        medicines=[MedicineOut.model_validate(m) for m in enc.medicines],
-        created_at=as_utc(enc.created_at),
-        triage_suggestion=suggestion,
-    )
+@ranges_router.get("/vital-ranges", response_model=list[VitalRangeOut])
+def get_vital_ranges() -> list[VitalRangeOut]:
+    """Normal adult ranges shown beside every reading (placeholders for a doctor to confirm)."""
+    return vital_ranges()
 
 
 @router.post("", response_model=PatientCreatedOut, status_code=201)
@@ -44,18 +56,15 @@ def create_patient(
         )
     )
     patient = Patient(
-        name=body.name,
-        age=body.age,
-        sex=body.sex,
-        phone=body.phone,
-        abha_number=body.abha_number,
-        consent_recorded_at=utcnow(),
-        created_by_id=user.id,
+        name=body.name, age=body.age, sex=body.sex, phone=body.phone, abha_number=body.abha_number,
+        email=body.email, language=body.language, address=body.address,
+        latitude=body.latitude, longitude=body.longitude,
+        consent_recorded_at=utcnow(), created_by_id=user.id, health_id=unique_health_id(db),
     )
     db.add(patient)
     db.flush()
     db.add(AuditLog(actor_id=user.id, action="PATIENT_CREATED", target_type="patient", target_id=patient.id))
-    db.commit()
+    commit(db)
     return PatientCreatedOut(**PatientOut.model_validate(patient).model_dump(), possible_duplicate_of=duplicate)
 
 
@@ -71,32 +80,74 @@ def list_patients(
     return list(db.scalars(stmt))
 
 
+@router.get("/register", response_model=list[RegisterRowOut])
+def register(
+    q: str | None = Query(None, max_length=80, description="Name, phone, Health ID or village"),
+    user: User = Depends(require_roles(Role.WORKER)),
+    db: Session = Depends(get_db),
+) -> list[RegisterRowOut]:
+    """The ASHA's register of everyone she looks after."""
+    return register_rows(db, user, q)
+
+
 @router.get("/{patient_id}", response_model=PatientOut)
 def get_patient(patient_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)) -> Patient:
     return get_patient_for(db, user, patient_id)
+
+
+@router.patch("/{patient_id}", response_model=PatientOut)
+def update_patient(patient_id: str, body: PatientUpdateIn, user: User = Depends(require_roles(Role.WORKER)),
+                   db: Session = Depends(get_db)) -> Patient:
+    patient = get_patient_for(db, user, patient_id)
+    for field, value in body.model_dump(exclude_unset=True).items():
+        if value is not None or field in ("email", "address", "latitude", "longitude"):
+            setattr(patient, field, value)
+    db.add(AuditLog(actor_id=user.id, action="PATIENT_UPDATED", target_type="patient", target_id=patient.id))
+    commit(db)
+    return patient
+
+
+@router.get("/{patient_id}/record", response_model=PatientRecordOut)
+def get_record(patient_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)) -> PatientRecordOut:
+    """The full history: conditions, prescriptions, care chart, vitals, every referral."""
+    patient = get_patient_for(db, user, patient_id)
+    out = patient_record(db, patient)
+    db.commit()  # courses that just finished are saved as completed
+    return out
 
 
 @router.post("/{patient_id}/encounters", response_model=EncounterOut, status_code=201)
 def create_encounter(
     patient_id: str,
     body: EncounterIn,
-    user: User = Depends(require_roles(Role.WORKER)),
+    user: User = Depends(require_roles(Role.WORKER, Role.DOCTOR, Role.FACILITY_STAFF)),
     db: Session = Depends(get_db),
 ) -> EncounterOut:
+    """A visit or new readings. The ASHA records visits; the hospital may add readings after
+    the checkup (e.g. everything back to normal), which then show on the referral."""
     patient = get_patient_for(db, user, patient_id)
+    if patient.deceased_at is not None:
+        raise ApiError(409, "PATIENT_DECEASED", "This patient has died; no new visits can be added.")
+    if user.role != Role.WORKER and body.kind != "VITALS_UPDATE":
+        raise ApiError(403, "FORBIDDEN", "The hospital can add new readings; visits are recorded by the ASHA.")
+    if body.referral_id is not None:
+        referral = get_referral_for(db, user, body.referral_id)
+        if referral.patient_id != patient.id:
+            raise ApiError(404, "NOT_FOUND", "Referral not found for this patient.")
     vitals = body.vitals.model_dump()
     problems = validate_vitals(vitals)
     if problems:
         raise ApiError(422, "VALIDATION_ERROR", "Some readings look wrong. Please check them.", {"fields": problems})
 
-    enc = Encounter(patient_id=patient.id, created_by_id=user.id, reason=body.reason.strip(), triage=body.triage, **vitals)
+    enc = Encounter(patient_id=patient.id, created_by_id=user.id, reason=body.reason.strip(), triage=body.triage,
+                    kind=body.kind, referral_id=body.referral_id, **vitals)
     enc.medicines = [Medicine(**m.model_dump()) for m in body.medicines]
     db.add(enc)
     db.flush()
     db.add(AuditLog(actor_id=user.id, action="ENCOUNTER_CREATED", target_type="encounter", target_id=enc.id))
-    db.commit()
-    hint = triage_suggestion(vitals) if body.triage != "EMERGENCY" else None
-    return _encounter_out(enc, hint)
+    commit(db)
+    hint = triage_suggestion(vitals) if body.triage != "EMERGENCY" and user.role == Role.WORKER else None
+    return encounter_out(db, enc, hint)
 
 
 @router.get("/{patient_id}/encounters", response_model=list[EncounterOut])
@@ -108,4 +159,20 @@ def list_encounters(patient_id: str, user: User = Depends(current_user), db: Ses
         .options(selectinload(Encounter.medicines))
         .order_by(Encounter.created_at.desc())
     )
-    return [_encounter_out(e) for e in encounters]
+    return [encounter_out(db, e) for e in encounters]
+
+
+@router.post("/{patient_id}/deceased", response_model=PatientOut)
+def mark_deceased(patient_id: str, body: DeceasedIn,
+                  user: User = Depends(require_roles(Role.WORKER, Role.DOCTOR, Role.FACILITY_STAFF, Role.COORDINATOR)),
+                  db: Session = Depends(get_db)) -> Patient:
+    """The patient died: stop every open referral at once, with cause and time of death."""
+    patient = get_patient_for(db, user, patient_id)
+    if patient.deceased_at is not None:
+        raise ApiError(409, "ALREADY_RECORDED", "The death of this patient is already recorded.")
+    if body.died_at > utcnow():
+        raise ApiError(422, "VALIDATION_ERROR", "The time of death cannot be in the future.",
+                       {"fields": {"died_at": "In the future"}})
+    record_death(db, patient, user, body.cause, body.died_at)
+    commit(db)
+    return patient

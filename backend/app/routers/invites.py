@@ -198,6 +198,6 @@ def join_as_office(body: OfficeJoinIn, user: User = Depends(current_user_any),
                                               func.lower(User.district) == area.lower(), User.is_active.is_(True)))
     for cid in others:
         db.add(Notification(user_id=cid, referral_id=None, kind="OFFICE_JOINED",
-                            message=f"{user.name} ({user.email}) joined the {area} office with the passphrase."))
+                            message=f"{user.name} ({user.contact}) joined the {area} office with the passphrase."))
     commit(db)
     return UserOut.model_validate(user)

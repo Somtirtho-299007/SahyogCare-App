@@ -1,13 +1,15 @@
 """Dashboard numbers, the ASHA's monthly activity summary, and the watchdog trigger."""
 
+import hmac
 import re
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Header, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.access import referral_scope
+from app.config import settings
 from app.db import get_db
 from app.errors import ApiError
 from app.models import Facility, FollowUp, Notification, Referral, User
@@ -120,6 +122,20 @@ def dashboard(user: User = Depends(current_user), db: Session = Depends(get_db))
         unread_notifications=unread,
         facilities=_facility_performance(db, referrals) if user.role == Role.COORDINATOR else None,
     )
+
+
+@router.post("/watchdog/tick", response_model=WatchdogRunOut)
+def watchdog_tick(x_cron_secret: str = Header(""), db: Session = Depends(get_db)) -> WatchdogRunOut:
+    """For an outside scheduler (e.g. a free cron service) when the watchdog is not run inside the server."""
+    if not settings.cron_secret or not hmac.compare_digest(x_cron_secret.encode(), settings.cron_secret.encode()):
+        raise ApiError(404, "NOT_FOUND", "Not found.")
+    from app.db import SessionLocal
+    from app.watchdog import run_once
+
+    db.close()
+    result = run_once(SessionLocal)
+    return WatchdogRunOut(**(result or {"not_accepted": 0, "not_arrived": 0, "follow_ups_overdue": 0,
+                                        "coordinator_alerts": 0}))
 
 
 @router.post("/watchdog/run", response_model=WatchdogRunOut)

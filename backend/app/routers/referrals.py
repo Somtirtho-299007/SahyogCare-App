@@ -13,7 +13,18 @@ from app.access import get_patient_for, get_referral_for, referral_scope
 from app.db import get_db
 from app.errors import ApiError
 from app import beds
-from app.models import AuditLog, Encounter, Facility, FacilityService, FollowUp, IdempotencyKey, Referral, ReferralEvent, User
+from app.models import (
+    AuditLog,
+    Encounter,
+    Facility,
+    FacilityService,
+    FollowUp,
+    IdempotencyKey,
+    Patient,
+    Referral,
+    ReferralEvent,
+    User,
+)
 from app.passes import make_pass, read_pass
 from app.rules import (
     FINISHED_STATUSES,
@@ -65,10 +76,14 @@ def _no_beds_error(db: Session, facility: Facility, service: str, state, creator
     )
 
 
-def _create(db: Session, *, actor: User, owner_id: str, patient_id: str, encounter: Encounter,
+def _create(db: Session, *, actor: User | None, owner_id: str, patient_id: str, encounter: Encounter,
             facility_id: str, requested_service: str, allow_without_bed: bool,
-            rerouted_from: Referral | None = None) -> Referral:
-    """Create a referral and hold a bed for it. Shared by "new referral" and "send elsewhere"."""
+            rerouted_from: Referral | None = None, origin: str = "ASHA", note: str | None = None) -> Referral:
+    """Create a referral and hold a bed for it. Shared by "new referral", "send elsewhere" and the
+    patient's own emergency booking (actor=None: the system acts for the ASHA, with the reason in `note`)."""
+    patient = db.get(Patient, patient_id)
+    if patient is not None and patient.deceased_at is not None:
+        raise ApiError(409, "PATIENT_DECEASED", "This patient has died; no referral can be made.")
     facility = db.get(Facility, facility_id)
     owner = db.get(User, owner_id)
     # Referrals stay inside the ASHA's own area.
@@ -116,12 +131,16 @@ def _create(db: Session, *, actor: User, owner_id: str, patient_id: str, encount
         triage=encounter.triage,
         status=Status.CREATED,
         rerouted_from_id=rerouted_from.id if rerouted_from else None,
+        origin=origin,
     )
     db.add(referral)
     db.flush()
-    note = f"Sent on from {rerouted_from.code}" if rerouted_from else None
-    referral.events.append(ReferralEvent(from_status=None, to_status=Status.CREATED, actor_id=actor.id, note=note))
-    db.add(AuditLog(actor_id=actor.id, action="REFERRAL_CREATED", target_type="referral", target_id=referral.id))
+    note = note or (f"Sent on from {rerouted_from.code}" if rerouted_from else None)
+    referral.events.append(ReferralEvent(from_status=None, to_status=Status.CREATED,
+                                         actor_id=actor.id if actor else None, note=note,
+                                         source="ONLINE" if actor else "SYSTEM"))
+    db.add(AuditLog(actor_id=actor.id if actor else None, action="REFERRAL_CREATED", target_type="referral",
+                    target_id=referral.id))
     if state is not None and state.free > 0:
         beds.place_hold(db, referral, state)
 
@@ -287,6 +306,11 @@ def reject(referral_id: str, body: RejectIn, user: User = Depends(current_user),
         set_service_availability(db, referral, "UNAVAILABLE", REJECTION_LABELS[reason])
     if reason == RejectionReason.NO_BEDS:
         beds.mark_ward_full(db, referral)
+    if referral.origin == "PATIENT_EMERGENCY":
+        # Nobody may be awake to choose the next hospital: the system does the ASHA's step.
+        from app.emergency import auto_reroute
+
+        auto_reroute(db, referral, REJECTION_LABELS[reason])
     commit(db)
     return referral_out(db, referral)
 

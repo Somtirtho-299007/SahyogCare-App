@@ -47,7 +47,8 @@ class DecisionIn(BaseModel):
 
 class AccessRequestOut(BaseModel):
     id: str
-    email: str
+    email: str | None
+    phone: str | None = None
     name: str
     requested_role: str
     facility_id: str | None
@@ -55,6 +56,7 @@ class AccessRequestOut(BaseModel):
     note: str | None
     status: str  # PENDING | APPROVED | REJECTED
     decision_note: str | None
+    photo_id: str | None = None  # the person's own photo, to check they are who they say
     created_at: datetime
     decided_at: datetime | None
 
@@ -63,7 +65,8 @@ def _out(db: Session, r: AccessRequest) -> AccessRequestOut:
     user = db.get(User, r.user_id)
     facility = db.get(Facility, r.facility_id) if r.facility_id else None
     return AccessRequestOut(
-        id=r.id, email=user.email, name=r.name, requested_role=r.requested_role, facility_id=r.facility_id,
+        id=r.id, email=user.email, phone=user.phone, name=r.name, requested_role=r.requested_role,
+        facility_id=r.facility_id, photo_id=r.photo_id or user.photo_id,
         facility_name=facility.name if facility else None, note=r.note, status=r.status,
         decision_note=r.decision_note, created_at=as_utc(r.created_at), decided_at=as_utc(r.decided_at),
     )
@@ -97,7 +100,7 @@ def ask_for_role(body: AccessRequestIn, user: User = Depends(current_user_any),
                                                       AccessRequest.status == "PENDING")):
         db.delete(old)
     r = AccessRequest(user_id=user.id, requested_role=body.role, facility_id=body.facility_id,
-                      name=body.name.strip(), note=body.note, status="PENDING")
+                      name=body.name.strip(), note=body.note, status="PENDING", photo_id=user.photo_id)
     db.add(r)
     db.flush()
 
@@ -111,7 +114,7 @@ def ask_for_role(body: AccessRequestIn, user: User = Depends(current_user_any),
         ))
         for cid in coordinators:
             db.add(Notification(user_id=cid, referral_id=None, kind="ACCESS_REQUEST",
-                                message=f"{r.name} ({user.email}) asks to join as "
+                                message=f"{r.name} ({user.contact}) asks to join as "
                                         f"{body.role.replace('_', ' ').lower()}."))
     db.add(AuditLog(actor_id=user.id, action="ACCESS_REQUESTED", target_type="access_request", target_id=r.id))
     commit(db)
