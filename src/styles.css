@@ -484,3 +484,57 @@ body{min-height:100vh;min-height:100dvh;overflow-x:hidden}
  .role-pill{max-width:34vw}
  .stat-card span{font-size:10px}
 }
+
+/* ---------- The way in (entry.jsx): one question per screen, big targets ---------- */
+.entry{min-height:100vh;min-height:100dvh;display:flex;align-items:flex-start;justify-content:center;padding:28px 16px 90px;background:radial-gradient(circle at 15% 0%,#dff4ef 0,transparent 45%),radial-gradient(circle at 100% 100%,#fdf0dc 0,transparent 40%),linear-gradient(180deg,#f8fcfb,#eff8f6)}
+.entry-card{width:100%;max-width:440px;background:#fff;border:1px solid var(--line);border-radius:26px;box-shadow:var(--shadow);padding:22px 20px 18px}
+.entry-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.entry-brand{display:flex;align-items:center;gap:10px}.entry-brand strong{font:800 19px Manrope;color:var(--deep)}
+.entry-top .help-btn{position:static}
+.lang-quick{display:flex;gap:8px;margin-bottom:18px}
+.lang-chip{flex:1;min-height:44px;border:1.5px solid var(--line);background:#f7fbfa;border-radius:14px;font-weight:700;color:var(--deep);font-size:15px}
+.lang-chip.on{background:var(--deep);border-color:var(--deep);color:#fff}
+.entry-title{font:800 clamp(22px,6vw,27px)/1.25 Manrope;color:var(--deep);margin:2px 0 14px}
+.entry-step{margin:0;font-size:12px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--teal)}
+.door{display:flex;align-items:center;gap:14px;width:100%;min-height:84px;margin-bottom:12px;padding:14px 16px;text-align:left;background:#fff;border:2px solid var(--line);border-radius:20px;color:var(--ink);transition:transform .15s,border-color .15s,box-shadow .15s}
+.door:hover,.door:focus-visible{border-color:var(--teal);box-shadow:0 8px 22px rgba(11,122,117,.12);transform:translateY(-1px);outline:none}
+.door:active{transform:scale(.99)}
+.door b{display:block;font:800 18px/1.25 Manrope;color:var(--deep)}.door small{display:block;color:var(--muted);font-size:14px;line-height:1.35;margin-top:2px}
+.door-icon{flex:0 0 52px;height:52px;border-radius:16px;display:grid;place-items:center;font-size:24px;background:var(--mint);color:var(--deep)}
+.door-patient .door-icon{background:#fde8e5;color:var(--coral)}
+.door:last-child .door-icon{background:#fdf0dc;color:#9a6512}
+.big-input{width:100%;min-height:56px;font-size:18px;padding:12px 16px;border:2px solid var(--line);border-radius:16px;background:#fbfdfd;color:var(--ink);margin:4px 0 14px}
+.big-input:focus{outline:none;border-color:var(--teal);background:#fff}
+select.big-input{appearance:auto}
+.otp-big,.code-big{text-align:center;font:800 26px/1 ui-monospace,Menlo,monospace;letter-spacing:.22em}
+.code-big{letter-spacing:.14em}
+.big-btn{width:100%;min-height:56px;font-size:18px;border-radius:16px;margin:2px 0 10px}
+.entry .link-btn{display:block;margin:6px auto 0;padding:10px;font-size:15px}
+.small-note{font-size:13px;margin-top:6px}
+.entry-error{margin:10px 0 0;padding:12px 14px;border-radius:14px;background:#fdecea;color:#9b2c22;font-weight:600;font-size:15px}
+.entry .demo-code{margin:4px 0 6px;text-align:center}
+.join-form label{display:block;font-weight:700;color:var(--deep);margin:6px 0 4px;font-size:15px}
+.choice-row{display:flex;flex-wrap:wrap;gap:8px;margin:4px 0 14px}
+.choice{flex:1 1 auto;min-height:48px;padding:10px 14px;border:2px solid var(--line);border-radius:14px;background:#fff;font-weight:700;color:var(--deep);font-size:16px}
+.choice.on{background:var(--deep);border-color:var(--deep);color:#fff}
+.join-form .photo-line{margin-bottom:14px}
+.waiting{text-align:center}
+.big-tick{width:76px;height:76px;margin:6px auto 12px;border-radius:50%;display:grid;place-items:center;font-size:38px;font-weight:800;background:var(--mint);color:var(--teal)}
+.waiting-card{display:flex;flex-direction:column;gap:2px;margin:16px 0;padding:14px;border-radius:16px;background:#f7fbfa;border:1px solid var(--line)}
+.waiting-card span{color:var(--muted);font-size:14px}
+.new-code-card{text-align:center;max-width:420px}
+.code-display{margin:14px 0;padding:18px 10px;border-radius:18px;background:var(--deep);color:#bdf1df;font:800 clamp(28px,9vw,40px)/1 ui-monospace,Menlo,monospace;letter-spacing:.12em;user-select:all}
+.code-rules{text-align:left;margin:0 0 16px;padding-left:20px;color:var(--ink);font-size:15px}.code-rules li{margin:6px 0}
+.people-list{display:flex;flex-direction:column;gap:10px;margin-top:12px}
+.person{display:flex;align-items:center;gap:12px;padding:12px;border:1px solid var(--line);border-radius:16px;background:#fff}
+.person.off{opacity:.6;background:#f6f8f8}
+.person-main{flex:1;min-width:0;display:flex;flex-direction:column}
+.person-main b{color:var(--deep)}.person-main small{color:var(--muted);overflow-wrap:anywhere}
+.person-actions{display:flex;flex-direction:column;align-items:flex-end;gap:2px}
+.person-actions .link-btn{padding:6px 4px;font-size:14px}
+.danger-link{color:var(--coral)!important}
+.search-row input{width:100%;min-height:44px;padding:10px 14px;border:1.5px solid var(--line);border-radius:12px}
+@media (max-width:420px){.entry{padding:14px 12px 90px}.entry-card{padding:18px 14px 14px;border-radius:22px}.door{min-height:78px;padding:12px}.door-icon{flex-basis:46px;height:46px}.person{flex-wrap:wrap}.person-actions{flex-direction:row;width:100%;justify-content:flex-end}}
+/* On a phone the language button sits bottom-right, clear of the header and its buttons. */
+@media (max-width:850px){aside.language-sidebar{top:auto;bottom:16px;right:12px}html[dir="rtl"] aside.language-sidebar{left:12px;right:auto}}
+@media (max-width:850px){.toast{bottom:84px}}

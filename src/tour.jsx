@@ -1,87 +1,20 @@
 import React, { useEffect, useState } from "react";
+import { useLanguage } from "./i18n.jsx";
 
 /* ---------- Guided app tour (UI only: spotlights existing elements via data-tour) ---------- */
+// Each step names i18n keys (see i18n.jsx: tour.*), so the tour speaks the chosen language.
+const step = (target, key) => ({ target, title: `tour.${key}.t`, body: `tour.${key}.b` });
+const replay = step("help", "replay");
 export const TOURS = {
-  auth: [
-    {
-      title: "Welcome to SahyogCare",
-      body: "One referral, one visible journey — from the ASHA worker's doorstep to the hospital and back.",
-    },
-    {
-      target: "roles",
-      title: "Pick your role",
-      body: "ASHA / ANM, Patient or Medical Team. Each role opens its own dashboard.",
-    },
-    {
-      target: "email",
-      title: "Verify with a code",
-      body: "Enter your email and send a verification code. In this demo the code is shown on screen. Patients just continue without logging in.",
-    },
-    { target: "language", title: "Your language", body: "Switch between 23 Indian languages any time from this tab." },
-  ],
-  asha: [
-    {
-      target: "stats",
-      title: "Your day at a glance",
-      body: "Cases created today, open referrals and new alerts about your patients.",
-    },
-    {
-      target: "intake",
-      title: "Intake → facility → referral",
-      body: "Record the patient, pick a receiving facility and service, then create the referral and give the patient its code and QR pass.",
-    },
-    {
-      target: "continuity",
-      title: "Referral continuity",
-      body: "New alerts and every referral you create, with its latest status. Tap one to see its journey.",
-    },
-    {
-      target: "vitals",
-      title: "Vitals & medicines",
-      body: "Update blood pressure, other vitals and ongoing medicines for the latest patient.",
-    },
-    { target: "help", title: "Replay anytime", body: "Tap ? to see this tour again." },
-  ],
-  patient: [
-    {
-      target: "token",
-      title: "Enter your token",
-      body: "Type the referral code your ASHA worker gave you, like SC-7K3M9Q, and the last 4 digits of your phone.",
-    },
-    {
-      target: "journey",
-      title: "Your journey",
-      body: "See which steps are done, where you are now and what comes next.",
-    },
-    { target: "consult", title: "Talk to a doctor", body: "Start an eSanjeevani teleconsultation from here." },
-    { target: "help", title: "Replay anytime", body: "Tap ? to see this tour again." },
-  ],
-  coordinator: [
-    { target: "requests", title: "Who wants to join", body: "People who signed up with their email ask for a role here. Approve or reject in one tap." },
-    { target: "invites", title: "Invite codes", body: "Make a secret code for ASHAs, a hospital's staff or doctors. People who enter it join at once." },
-    { target: "beds", title: "Beds in the district", body: "Free beds in every ward of every hospital, as their staff last reported." },
-    { target: "help", title: "Replay anytime", body: "Tap ? to see this tour again." },
-  ],
-  medical: [
-    {
-      target: "stats",
-      title: "Queue overview",
-      body: "Incoming referrals, priority cases and emergencies needing escalation.",
-    },
-    {
-      target: "filters",
-      title: "Filter by triage",
-      body: "Show all open referrals, one triage level, or the closed ones.",
-    },
-    {
-      target: "queue",
-      title: "Move each referral forward",
-      body: "Accept or reject, record arrival (or scan the patient's pass), then the doctor records consultation and outcome.",
-    },
-    { target: "help", title: "Replay anytime", body: "Tap ? to see this tour again." },
-  ],
+  auth: [step(null, "welcome"), step("doors", "doors"), step("language", "language")],
+  asha: [step("stats", "ashaStats"), step("intake", "ashaIntake"), step("continuity", "ashaContinuity"), step("vitals", "ashaVitals"), replay],
+  patient: [step("token", "patientToken"), step("journey", "patientJourney"), step("consult", "patientConsult"), replay],
+  coordinator: [step("requests", "coordRequests"), step("people", "coordPeople"), step("beds", "coordBeds"), replay],
+  medical: [step("stats", "medStats"), step("filters", "medFilters"), step("queue", "medQueue"), replay],
 };
+
 export function Tour({ steps, open, onClose }) {
+  const { t } = useLanguage();
   const [i, setI] = useState(0);
   const [rect, setRect] = useState(null);
   const step = steps?.[i];
@@ -149,7 +82,7 @@ export function Tour({ steps, open, onClose }) {
     else pos = { ...pos, bottom: 16, left: (vw - w) / 2 };
   }
   return (
-    <div className="tour" role="dialog" aria-modal="true" aria-label="App tour">
+    <div className="tour" role="dialog" aria-modal="true" aria-label={t("appTour")}>
       {spot ? <div className="tour-spot" style={spot} /> : <div className="tour-dim" />}
       <div className={`tour-card ${spot ? "" : "centered"}`} style={pos} key={i}>
         <div className="tour-top">
@@ -157,11 +90,11 @@ export function Tour({ steps, open, onClose }) {
             {i + 1} / {steps.length}
           </span>
           <button className="link-btn" onClick={onClose}>
-            Skip
+            {t("tourSkip")}
           </button>
         </div>
-        <h4>{step.title}</h4>
-        <p>{step.body}</p>
+        <h4>{t(step.title)}</h4>
+        <p>{t(step.body)}</p>
         <div className="tour-foot">
           <div className="tour-dots">
             {steps.map((_, k) => (
@@ -170,12 +103,12 @@ export function Tour({ steps, open, onClose }) {
           </div>
           <div className="tour-actions">
             {i > 0 && (
-              <button className="secondary-btn" onClick={() => setI(i - 1)} aria-label="Previous">
+              <button className="secondary-btn" onClick={() => setI(i - 1)} aria-label={t("back")}>
                 ←
               </button>
             )}
             <button className="primary-btn" onClick={() => (last ? onClose() : setI(i + 1))}>
-              {last ? "Got it" : "Next →"}
+              {last ? t("tourDone") : `${t("next")} →`}
             </button>
           </div>
         </div>

@@ -7,30 +7,25 @@ import "./language-sidebar.css";
 import {
   api,
   currentUser,
-  getDistricts,
-  loginMethods,
+  refreshMe,
   logout,
   lookupReferral,
   newKey,
   qs,
-  refreshMe,
   request,
-  requestCode,
-  uploadPhoto,
-  verifyCode,
 } from "./api.js";
 import {
   FlagChip,
   PatientHealthPortal,
   PatientRecord,
   PatientRegister,
-  PhotoPicker,
   PhotoView,
   VitalsGrid,
   VitalsReadout,
   useVitalRanges,
 } from "./health.jsx";
-import { LanguageProvider, LanguageSidebar, readLS, useLanguage, writeLS } from "./i18n.jsx";
+import { EntryScreen, JoinScreen, NewCodeCard, PeoplePanel, SCREEN_FOR } from "./entry.jsx";
+import { LanguageProvider, LanguageSidebar, errorText, readLS, useLanguage, writeLS } from "./i18n.jsx";
 import { TOURS, Tour } from "./tour.jsx";
 import { Dashboard, Empty, Field, Skeleton, Stat } from "./ui.jsx";
 
@@ -40,14 +35,19 @@ const ROLES = {
   medical: { label: "Medical Team", icon: "✚", desc: "Triage, referrals & outcomes" },
   coordinator: { label: "Coordinator", icon: "◆", desc: "District office & approvals" },
 };
-// Backend role → which screen it uses.
-const SCREEN_FOR = { WORKER: "asha", FACILITY_STAFF: "medical", DOCTOR: "medical", COORDINATOR: "coordinator" };
 const JOURNEY = ["CREATED", "ACCEPTED", "ARRIVAL_RECORDED", "CONSULTED", "OUTCOME_RECORDED", "FOLLOW_UP_DUE", "CLOSED"];
-const TRIAGE_LABEL = { EMERGENCY: "Emergency", PRIORITY: "Priority", ROUTINE: "Routine" };
-const isEmail = (x) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(x.trim());
-const isMobile = (x) => /^[6-9]\d{9}$/.test(x.trim());
+const TRIAGE_KEY = { EMERGENCY: "emergency", PRIORITY: "priority", ROUTINE: "routine" };
 const pretty = (s) => (s || "").replaceAll("_", " ");
-const REFRESH_MS = 15000;
+// Words from the server (statuses, wards, services) shown in the person's language.
+const said = (t, prefix, s) => {
+  const k = `${prefix}${s}`;
+  const v = t(k);
+  return v === k ? pretty(s) : v;
+};
+const statusText = (t, s) => said(t, "st_", s);
+const wardText = (t, w) => said(t, "ward_", w);
+const serviceText = (t, s) => said(t, "svc_", (s || "").replace(/\W+/g, "_"));
+const REFRESH_MS = 30000;
 
 const ESANJEEVANI_URL = "https://esanjeevani.mohfw.gov.in/#/";
 const EMERGENCY_NUMBER = "108";
@@ -77,11 +77,12 @@ function usePersisted(key, initial) {
 
 const fmtTime = (iso) => (iso ? new Date(iso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "");
 
-// Re-run `load` now, every 15 seconds, and whenever the tab comes back into view.
+// Re-run `load` now, every 30 seconds while the screen is in view, and as soon as the
+// tab comes back into view. A phone in a pocket does not keep fetching.
 function usePolling(load) {
   useEffect(() => {
     load();
-    const id = setInterval(load, REFRESH_MS);
+    const id = setInterval(() => document.visibilityState === "visible" && load(), REFRESH_MS);
     const onFocus = () => document.visibilityState === "visible" && load();
     document.addEventListener("visibilitychange", onFocus);
     return () => {
@@ -107,12 +108,15 @@ function App() {
   }, []);
   const tourKey = session?.screen || "auth";
   const [tourOpen, setTourOpen] = useState(false);
+  // The tour opens by itself once per dashboard, never on the start screen: the first
+  // thing a new person sees is the three big doors, nothing on top of them.
+  const onDashboard = !!session && (session.screen === "patient" || session.user?.approved !== false);
   useEffect(() => {
-    if (!readLS(`sahyogcare_tour_${tourKey}`)) {
+    if (onDashboard && !readLS(`sahyogcare_tour_${tourKey}`)) {
       const x = setTimeout(() => setTourOpen(true), 600);
       return () => clearTimeout(x);
     }
-  }, [tourKey]);
+  }, [tourKey, onDashboard]);
   const closeTour = () => {
     writeLS(`sahyogcare_tour_${tourKey}`, "1");
     setTourOpen(false);
@@ -122,10 +126,21 @@ function App() {
     window.addEventListener("sahyog:logout", onLogout);
     return () => window.removeEventListener("sahyog:logout", onLogout);
   }, []);
+  // Already logged in on this phone: ask the server once whether a personal code is
+  // waiting to be shown (e.g. the office approved this person since the last visit).
+  const userId = session?.user?.id;
+  useEffect(() => {
+    if (!userId) return;
+    refreshMe()
+      .then(({ new_code, ...user }) => {
+        setSession((s) => (s?.user?.id === user.id ? { ...s, user, screen: SCREEN_FOR[user.role], newCode: new_code || s.newCode } : s));
+      })
+      .catch(() => {});
+  }, [userId]);
   const signIn = (s) => {
     if (s.screen === "patient") writeLS("sahyogcare_patient_mode", "1");
     setSession(s);
-    if (s.user) setToast(`${t(s.screen)} · ${s.user.name}`);
+    if (s.user && s.user.approved !== false) setToast(`${t(s.screen)} · ${s.user.name}`);
   };
   const signOut = () => {
     // Drafts belong to the person who wrote them: clear them on this shared phone.
@@ -143,7 +158,7 @@ function App() {
   if (!session)
     return (
       <>
-        <Auth onSignIn={signIn} onTour={() => setTourOpen(true)} />
+        <EntryScreen onSignIn={signIn} onTour={() => setTourOpen(true)} />
         <LanguageSidebar />
         <Tour steps={TOURS.auth} open={tourOpen} onClose={closeTour} />
       </>
@@ -151,18 +166,15 @@ function App() {
   if (session.user && session.user.approved === false)
     return (
       <>
-        <AccessScreen
+        <JoinScreen
           user={session.user}
-          onApproved={(user) => signIn({ screen: SCREEN_FOR[user.role], user })}
+          onApproved={({ new_code, ...user }) => signIn({ screen: SCREEN_FOR[user.role], user, newCode: new_code })}
           onSignOut={signOut}
-          onPatient={() => {
-            signOut();
-            signIn({ screen: "patient", user: null });
-          }}
         />
         <LanguageSidebar />
       </>
     );
+  const newCode = session.newCode;
   return (
     <div className="app-shell">
       <header className="topbar">
@@ -170,11 +182,11 @@ function App() {
           <div className="brand-mark">स</div>
           <div>
             <strong>SahyogCare</strong>
-            <span>Care without black holes</span>
+            <span>{t("tagline")}</span>
           </div>
         </div>
         <div className="session">
-          <button className="help-btn" data-tour="help" onClick={() => setTourOpen(true)} aria-label="App tour" title="App tour">
+          <button className="help-btn" data-tour="help" onClick={() => setTourOpen(true)} aria-label={t("appTour")} title={t("appTour")}>
             ?
           </button>
           <span className="role-pill">
@@ -203,262 +215,18 @@ function App() {
         </div>
       )}
       <LanguageSidebar />
-      <Tour steps={TOURS[session.screen]} open={tourOpen} onClose={closeTour} />
-    </div>
-  );
-}
-
-// ---------- New account: ask for a role, wait for the coordinator ----------
-
-const REQUEST_ROLES = [
-  { role: "WORKER", label: "ASHA / ANM" },
-  { role: "FACILITY_STAFF", label: "Hospital staff" },
-  { role: "DOCTOR", label: "Doctor" },
-  { role: "COORDINATOR", label: "Coordinator (district office)" },
-];
-const NEEDS_HOSPITAL = new Set(["FACILITY_STAFF", "DOCTOR"]);
-
-function AccessScreen({ user, onApproved, onSignOut, onPatient }) {
-  const [mine, setMine] = useState(undefined); // undefined = loading, null = no request yet
-  const [facilities, setFacilities] = useState([]);
-  // Nobody is put in an area by default: each person picks where they work.
-  const [form, setForm] = usePersisted("sahyog_join_form", {
-    role: "WORKER",
-    name: "",
-    facility_id: "",
-    note: "",
-    district: "",
-  });
-  const [districts, setDistricts] = useState(null); // null while loading
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [photoId, setPhotoId] = useState(user.photo_id || null);
-  const [photoBusy, setPhotoBusy] = useState(false);
-  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
-  // Her own photo, so the district office can check a real ASHA is joining.
-  const addPhoto = async (file) => {
-    setPhotoBusy(true);
-    setError("");
-    try {
-      setPhotoId((await uploadPhoto(file, "user")).id);
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setPhotoBusy(false);
-    }
-  };
-
-  const approvedRef = useRef(onApproved);
-  approvedRef.current = onApproved;
-  const check = useCallback(async () => {
-    try {
-      const me = await refreshMe();
-      if (me.approved) return approvedRef.current(me);
-      setMine(await api.get("/access-requests/mine"));
-    } catch (e) {
-      setError(e.message);
-    }
-  }, []);
-  usePolling(check);
-  useEffect(() => {
-    getDistricts()
-      .then(setDistricts)
-      .catch(() => setDistricts([]));
-  }, []);
-  useEffect(() => {
-    if (!form.district) return setFacilities([]);
-    api.get(`/facilities${qs({ district: form.district })}`).then(setFacilities).catch(() => {});
-  }, [form.district]);
-
-  const submit = async () => {
-    setBusy(true);
-    setError("");
-    try {
-      const body = { role: form.role, name: form.name.trim(), note: form.note.trim() || null, district: form.district };
-      if (NEEDS_HOSPITAL.has(form.role)) body.facility_id = form.facility_id;
-      const r = await api.post("/access-requests", body);
-      setMine(r);
-      if (r.status === "APPROVED") await check();
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const [invite, setInvite] = useState("");
-  const [passphrase, setPassphrase] = useState("");
-  const enterOffice = async () => {
-    setBusy(true);
-    setError("");
-    try {
-      await api.post("/invite-codes/office", { district: form.district, name: form.name.trim(), passphrase });
-      setPassphrase("");
-      await check();
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setBusy(false);
-    }
-  };
-  const redeem = async () => {
-    setBusy(true);
-    setError("");
-    try {
-      await api.post("/invite-codes/redeem", { code: invite.trim(), name: form.name.trim() });
-      await check();
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const waiting = mine?.status === "PENDING";
-  const canSend = form.name.trim() && form.district && (!NEEDS_HOSPITAL.has(form.role) || form.facility_id);
-  return (
-    <div className="auth-card-wrap access-wrap">
-      <div className="auth-card">
-        <div className="mini-brand">
-          स <span>SahyogCare</span>
-        </div>
-        {mine === undefined ? (
-          <Skeleton />
-        ) : waiting ? (
-          <>
-            <h2>Waiting for approval</h2>
-            <p className="muted">
-              You asked to join as <b>{REQUEST_ROLES.find((r) => r.role === mine.requested_role)?.label}</b>
-              {mine.facility_name ? ` at ${mine.facility_name}` : ""}. The district coordinator has been told. This page
-              opens your dashboard by itself once you are approved.
-            </p>
-            <button className="primary-btn" onClick={check}>
-              Check again
-            </button>
-          </>
-        ) : (
-          <>
-            <h2>Welcome to SahyogCare</h2>
-            <p className="muted">
-              Signed in as <b>{user.email}</b>. Tell us your role; the district coordinator approves it before you can
-              see any patient records.
-            </p>
-            {mine?.status === "REJECTED" && (
-              <div className="otp-note" role="alert">
-                Your last request was not approved{mine.decision_note ? `: ${mine.decision_note}` : "."} You can ask again.
-              </div>
-            )}
-            <label>Your name</label>
-            <input id="join-name" value={form.name} onChange={set("name")} placeholder="Full name" />
-            <label>Where you work</label>
-            {districts === null ? (
-              <p className="otp-note">Loading areas…</p>
-            ) : districts.length === 0 ? (
-              <p className="otp-note" role="alert">Could not load the list of areas. Refresh the page.</p>
-            ) : null}
-            <div className="role-grid area-grid">
-              {(districts || []).map((d) => (
-                <button
-                  key={d}
-                  className={`role-choice ${form.district === d ? "selected" : ""}`}
-                  onClick={() => setForm((f) => ({ ...f, district: d, facility_id: "" }))}
-                >
-                  <span>{d}</span>
-                  <small>Approved by the {d} office</small>
-                </button>
-              ))}
-            </div>
-            <label>Invite code from your district office</label>
-            <input
-              value={invite}
-              onChange={(e) => setInvite(e.target.value.toUpperCase())}
-              placeholder="e.g. HS-KAL-7K3M9QWX"
-              autoCapitalize="characters"
-            />
-            <button className="primary-btn" onClick={redeem} disabled={!invite.trim() || !form.name.trim() || busy}>
-              {busy ? "Checking…" : "Join with code"}
-            </button>
-            <p className="otp-note">No code? Ask to join below and the district office will approve you.</p>
-            <label>Your role</label>
-            <div className="role-grid">
-              {REQUEST_ROLES.map((r) => (
-                <button
-                  key={r.role}
-                  className={`role-choice ${form.role === r.role ? "selected" : ""}`}
-                  onClick={() => setForm((f) => ({ ...f, role: r.role }))}
-                >
-                  <span>{r.label}</span>
-                </button>
-              ))}
-            </div>
-            {NEEDS_HOSPITAL.has(form.role) && (
-              <>
-                <label>Your hospital</label>
-                <select className="join-select" value={form.facility_id} onChange={set("facility_id")}>
-                  <option value="">Choose your hospital</option>
-                  {facilities.map((f) => (
-                    <option key={f.id} value={f.id}>
-                      {f.name}
-                    </option>
-                  ))}
-                </select>
-              </>
-            )}
-            {form.role === "COORDINATOR" ? (
-              <>
-                <label>District office passphrase</label>
-                <input
-                  id="office-passphrase"
-                  type="password"
-                  autoComplete="off"
-                  value={passphrase}
-                  onChange={(e) => setPassphrase(e.target.value)}
-                  placeholder={form.district ? `The ${form.district} office passphrase` : "Choose your area first"}
-                />
-                <button
-                  className="primary-btn"
-                  onClick={enterOffice}
-                  disabled={!form.district || !form.name.trim() || !passphrase || busy}
-                >
-                  {busy ? "Checking…" : "Enter as district office"}
-                </button>
-                <p className="otp-note">Only the district office knows this passphrase. Wrong tries are limited.</p>
-              </>
-            ) : (
-              <>
-                <label>How the coordinator can confirm it's you (optional)</label>
-                <input value={form.note} onChange={set("note")} placeholder="e.g. ASHA, Chakdaha block, ID 1234" />
-                <label>Your photo {form.role === "WORKER" ? "(helps the district office confirm you are a real ASHA)" : "(optional)"}</label>
-                <div className="photo-line">
-                  {photoId && <PhotoView id={photoId} alt="You" className="photo-mini" />}
-                  <PhotoPicker label={photoId ? "Retake" : "Take a selfie"} onFile={addPhoto} busy={photoBusy} />
-                </div>
-                <button className="primary-btn" onClick={submit} disabled={!canSend || busy}>
-                  {busy ? "Sending…" : "Ask to join"}
-                </button>
-              </>
-            )}
-          </>
-        )}
-        {error && (
-          <div className="otp-note" role="alert">
-            {error}
-          </div>
-        )}
-        <button className="link-btn" onClick={onPatient}>
-          I'm a patient: track my referral
-        </button>
-        <button className="link-btn" onClick={onSignOut}>
-          Sign out
-        </button>
-      </div>
+      {newCode ? (
+        <NewCodeCard code={newCode} onDone={() => setSession((s) => ({ ...s, newCode: null }))} />
+      ) : (
+        <Tour steps={TOURS[session.screen]} open={tourOpen} onClose={closeTour} />
+      )}
     </div>
   );
 }
 
 // ---------- Coordinator ----------
 
-const ROLE_LABEL = Object.fromEntries(REQUEST_ROLES.map((r) => [r.role, r.label]));
+const ROLE_LABEL_KEY = { WORKER: "roleAsha", FACILITY_STAFF: "roleStaff", DOCTOR: "roleDoctor" };
 
 function CoordinatorDashboard({ user, toast }) {
   const { t } = useLanguage();
@@ -472,7 +240,7 @@ function CoordinatorDashboard({ user, toast }) {
       setRequests(reqs);
       setFacilities(facs);
     } catch (e) {
-      if (e.status !== 401) toast(e.message);
+      if (e.status !== 401) toast(errorText(t, e));
     }
   }, [toast]);
   usePolling(load);
@@ -481,10 +249,10 @@ function CoordinatorDashboard({ user, toast }) {
     setBusyId(r.id);
     try {
       await api.post(`/access-requests/${r.id}/${action}`);
-      toast(`${r.name} · ${action === "approve" ? "approved" : "rejected"}`);
+      toast(`${r.name} · ${action === "approve" ? t("approvedToast") : t("rejectedToast")}`);
       setRequests((list) => (list || []).filter((x) => x.id !== r.id));
     } catch (e) {
-      toast(e.message);
+      toast(errorText(t, e));
       load();
     } finally {
       setBusyId(null);
@@ -495,28 +263,28 @@ function CoordinatorDashboard({ user, toast }) {
   return (
     <Dashboard
       title={`${user?.district || ""} ${t("coordinatorDashboard")}`.trim()}
-      subtitle={`${t("coordinatorSub")} You see only ${user?.district || "your area"}.`}
+      subtitle={`${t("coordinatorSub")} ${t("youSeeOnly")} ${user?.district || ""}.`}
     >
       <div className="stats">
-        <Stat tour="stats" label="Waiting for approval" value={requests ? requests.length : "–"} meta="People who asked to join" />
-        <Stat label="Hospitals" value={facilities ? facilities.length : "–"} meta="In your district" />
+        <Stat tour="stats" label={t("waitingApproval")} value={requests ? requests.length : "–"} meta={t("peopleAsked")} />
+        <Stat label={t("hospitals")} value={facilities ? facilities.length : "–"} meta={t("inYourDistrict")} />
         <Stat
-          label="Free beds"
+          label={t("freeBeds")}
           value={facilities ? wards.reduce((n, w) => n + w.free, 0) : "–"}
-          meta={`of ${wards.reduce((n, w) => n + w.total, 0)} reported`}
+          meta={`${t("ofReported")} ${wards.reduce((n, w) => n + w.total, 0)}`}
         />
       </div>
       <section className="panel" data-tour="requests">
         <div className="panel-head">
           <div>
-            <p className="eyebrow">Access</p>
-            <h3>Who wants to join</h3>
+            <p className="eyebrow">{t("accessEyebrow")}</p>
+            <h3>{t("whoWantsJoin")}</h3>
           </div>
         </div>
         {requests === null ? (
           <Skeleton />
         ) : requests.length === 0 ? (
-          <Empty title="No one is waiting" text="New sign-ups appear here for you to approve." />
+          <Empty title={t("noOneWaiting")} text={t("noOneWaitingSub")} />
         ) : (
           <div className="queue">
             {requests.map((r) => (
@@ -524,9 +292,9 @@ function CoordinatorDashboard({ user, toast }) {
                 <div className="request-who">
                   <PhotoView id={r.photo_id} alt={r.name} className="photo-face" />
                   <div>
-                  <span className="status-badge">{ROLE_LABEL[r.requested_role] || pretty(r.requested_role)}</span>
+                  <span className="status-badge">{ROLE_LABEL_KEY[r.requested_role] ? t(ROLE_LABEL_KEY[r.requested_role]) : pretty(r.requested_role)}</span>
                   <h4>{r.name}</h4>
-                  {!r.photo_id && r.requested_role === "WORKER" && <small className="muted">No photo yet</small>}
+                  {!r.photo_id && r.requested_role === "WORKER" && <small className="muted">{t("noPhotoYet")}</small>}
                   <p>
                     {r.email || r.phone}
                     {r.facility_name ? ` · ${r.facility_name}` : ""}
@@ -536,10 +304,10 @@ function CoordinatorDashboard({ user, toast }) {
                 </div>
                 <div className="queue-actions">
                   <button className="secondary-btn" disabled={busyId === r.id} onClick={() => decide(r, "reject")}>
-                    Reject
+                    {t("reject")}
                   </button>
                   <button className="primary-btn" disabled={busyId === r.id} onClick={() => decide(r, "approve")}>
-                    Approve
+                    {t("approve")}
                   </button>
                 </div>
               </div>
@@ -547,157 +315,16 @@ function CoordinatorDashboard({ user, toast }) {
           </div>
         )}
       </section>
-      <InvitePanel facilities={facilities || []} toast={toast} />
+      <PeoplePanel me={user} facilities={facilities} toast={toast} />
       <HospitalsPanel facilities={facilities} toast={toast} onChange={load} />
     </Dashboard>
-  );
-}
-
-const INVITE_ROLES = [
-  { role: "WORKER", label: "ASHA (whole district)" },
-  { role: "FACILITY_STAFF", label: "Hospital staff" },
-  { role: "DOCTOR", label: "Doctor" },
-  { role: "COORDINATOR", label: "Another coordinator (1 use, 7 days)" },
-];
-
-function InvitePanel({ facilities, toast }) {
-  const [codes, setCodes] = useState(null);
-  const [form, setForm] = useState({ role: "WORKER", facility_id: "", max_uses: "", days: "30", label: "" });
-  const [busy, setBusy] = useState(false);
-  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
-  const load = useCallback(async () => {
-    try {
-      setCodes(await api.get("/invite-codes"));
-    } catch (e) {
-      if (e.status !== 401) toast(e.message);
-    }
-  }, [toast]);
-  usePolling(load);
-
-  const create = async () => {
-    setBusy(true);
-    try {
-      const body = { role: form.role, label: form.label.trim() || null, expires_in_days: Number(form.days) || null };
-      if (NEEDS_HOSPITAL.has(form.role)) body.facility_id = form.facility_id;
-      if (form.max_uses) body.max_uses = Number(form.max_uses);
-      const c = await api.post("/invite-codes", body);
-      setCodes((list) => [c, ...(list || [])]);
-      toast(`Code ${c.code} created`);
-    } catch (e) {
-      toast(e.message);
-    } finally {
-      setBusy(false);
-    }
-  };
-  const revoke = async (c) => {
-    try {
-      const r = await api.post(`/invite-codes/${c.id}/revoke`);
-      setCodes((list) => list.map((x) => (x.id === r.id ? r : x)));
-      toast(`${c.code} revoked`);
-    } catch (e) {
-      toast(e.message);
-    }
-  };
-  const copy = async (c) => {
-    try {
-      await navigator.clipboard.writeText(c.code);
-      toast("Code copied");
-    } catch {
-      toast(c.code);
-    }
-  };
-
-  const canCreate = !NEEDS_HOSPITAL.has(form.role) || form.facility_id;
-  return (
-    <section className="panel" data-tour="invites" style={{ marginTop: 18 }}>
-      <div className="panel-head">
-        <div>
-          <p className="eyebrow">Invite codes</p>
-          <h3>Let people join without waiting</h3>
-        </div>
-      </div>
-      <div className="form-grid">
-        <Field label="Who is this code for">
-          <select value={form.role} onChange={set("role")}>
-            {INVITE_ROLES.map((r) => (
-              <option key={r.role} value={r.role}>
-                {r.label}
-              </option>
-            ))}
-          </select>
-        </Field>
-        {NEEDS_HOSPITAL.has(form.role) ? (
-          <Field label="Hospital">
-            <select value={form.facility_id} onChange={set("facility_id")}>
-              <option value="">Choose a hospital</option>
-              {facilities.map((f) => (
-                <option key={f.id} value={f.id}>
-                  {f.name}
-                </option>
-              ))}
-            </select>
-          </Field>
-        ) : (
-          <Field label="Note (optional)">
-            <input value={form.label} onChange={set("label")} placeholder="e.g. Chakdaha block training" />
-          </Field>
-        )}
-        {form.role !== "COORDINATOR" && (
-          <>
-            <Field label="How many people can use it (empty = no limit)">
-              <input inputMode="numeric" value={form.max_uses} onChange={set("max_uses")} placeholder="e.g. 25" />
-            </Field>
-            <Field label="Valid for (days)">
-              <input inputMode="numeric" value={form.days} onChange={set("days")} />
-            </Field>
-          </>
-        )}
-      </div>
-      <div className="action-row">
-        <button className="primary-btn" onClick={create} disabled={!canCreate || busy}>
-          {busy ? "Creating…" : "Create code"}
-        </button>
-      </div>
-      {codes === null ? (
-        <Skeleton />
-      ) : codes.length === 0 ? (
-        <Empty title="No codes yet" text="Create one and share it privately, e.g. by SMS to the people it is for." />
-      ) : (
-        <div className="queue" style={{ marginTop: 16 }}>
-          {codes.map((c) => (
-            <div className="queue-item" key={c.id}>
-              <div>
-                <span className="status-badge">{c.usable ? "Active" : c.revoked ? "Revoked" : "Expired / used up"}</span>
-                <h4 style={{ fontFamily: "monospace", letterSpacing: ".05em" }}>{c.code}</h4>
-                <p>
-                  {INVITE_ROLES.find((r) => r.role === c.role)?.label}
-                  {c.facility_name ? ` · ${c.facility_name}` : ""}
-                  {c.label ? ` · ${c.label}` : ""} · used {c.uses}
-                  {c.max_uses ? ` of ${c.max_uses}` : ""}
-                  {c.expires_at ? ` · until ${new Date(c.expires_at).toLocaleDateString()}` : ""}
-                </p>
-              </div>
-              {c.usable && (
-                <div className="queue-actions">
-                  <button className="secondary-btn" onClick={() => copy(c)}>
-                    Copy
-                  </button>
-                  <button className="secondary-btn" onClick={() => revoke(c)}>
-                    Revoke
-                  </button>
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-    </section>
   );
 }
 
 const WARDS = ["GENERAL", "EMERGENCY", "MATERNITY", "PAEDIATRIC", "ICU"];
 
 function HospitalsPanel({ facilities, toast, onChange }) {
+  const { t } = useLanguage();
   const [open, setOpen] = useState(null); // hospital id being managed
   const [adding, setAdding] = useState(false);
   const [bed, setBed] = useState({ ward: "GENERAL", total: "", occupied: "" });
@@ -714,7 +341,7 @@ function HospitalsPanel({ facilities, toast, onChange }) {
       toast(done);
       onChange();
     } catch (e) {
-      toast(e.message);
+      toast(errorText(t, e));
     } finally {
       setBusy(false);
     }
@@ -722,14 +349,14 @@ function HospitalsPanel({ facilities, toast, onChange }) {
   const saveBeds = (f) =>
     run(
       () => request("PUT", `/facilities/${f.id}/beds/${bed.ward}`, { total: Number(bed.total), occupied: Number(bed.occupied) }),
-      `${f.name}: ${pretty(bed.ward).toLowerCase()} beds saved`,
+      `${f.name}: ${wardText(t, bed.ward)} · ${t("bedsSaved")}`,
     );
   const addService = (f) =>
-    run(() => request("PATCH", `/facilities/${f.id}`, { add_services: [service.trim()] }), `${service.trim()} added`).then(() =>
+    run(() => request("PATCH", `/facilities/${f.id}`, { add_services: [service.trim()] }), `${service.trim()} · ${t("added")}`).then(() =>
       setService(""),
     );
   const toggleAmbulance = (f) =>
-    run(() => request("PATCH", `/facilities/${f.id}`, { has_ambulance: !f.has_ambulance }), "Ambulance updated");
+    run(() => request("PATCH", `/facilities/${f.id}`, { has_ambulance: !f.has_ambulance }), t("ambulanceUpdated"));
   const addHospital = () =>
     run(
       () =>
@@ -742,7 +369,7 @@ function HospitalsPanel({ facilities, toast, onChange }) {
           source: form.source.trim() || null,
           services: form.services.split(",").map((x) => x.trim()).filter(Boolean),
         }),
-      `${form.name.trim()} added`,
+      `${form.name.trim()} · ${t("added")}`,
     ).then(() => {
       setForm(blank);
       setAdding(false);
@@ -753,35 +380,35 @@ function HospitalsPanel({ facilities, toast, onChange }) {
     <section className="panel" data-tour="beds" style={{ marginTop: 18 }}>
       <div className="panel-head">
         <div>
-          <p className="eyebrow">Hospitals & beds</p>
-          <h3>Hospitals in the district</h3>
+          <p className="eyebrow">{t("hospitalsBeds")}</p>
+          <h3>{t("hospitalsInDistrict")}</h3>
         </div>
         <button className="secondary-btn" onClick={() => setAdding((x) => !x)}>
-          {adding ? "Close" : "+ Add hospital"}
+          {adding ? t("close") : `+ ${t("addHospital")}`}
         </button>
       </div>
       {adding && (
         <div className="form-grid" style={{ marginBottom: 16 }}>
-          <Field label="Name">
-            <input value={form.name} onChange={set("name")} placeholder="e.g. Karimpur Rural Hospital" />
+          <Field label={t("name")}>
+            <input value={form.name} onChange={set("name")} placeholder="Karimpur Rural Hospital" />
           </Field>
-          <Field label="Type">
+          <Field label={t("hospitalType")}>
             <input value={form.type} onChange={set("type")} />
           </Field>
-          <Field label="Address" full>
+          <Field label={t("address")} full>
             <input value={form.address} onChange={set("address")} />
           </Field>
-          <Field label="PIN code">
+          <Field label={t("pinCode")}>
             <input inputMode="numeric" maxLength="6" value={form.pincode} onChange={set("pincode")} />
           </Field>
-          <Field label="Phone">
+          <Field label={t("phone")}>
             <input inputMode="tel" value={form.phone} onChange={set("phone")} />
           </Field>
-          <Field label="Services (comma-separated)" full>
+          <Field label={t("servicesComma")} full>
             <input value={form.services} onChange={set("services")} />
           </Field>
-          <Field label="Where these details come from" full>
-            <input value={form.source} onChange={set("source")} placeholder="e.g. nadia.gov.in hospital list" />
+          <Field label={t("detailsSource")} full>
+            <input value={form.source} onChange={set("source")} placeholder="nadia.gov.in" />
           </Field>
           <div className="action-row" style={{ gridColumn: "1/-1" }}>
             <button
@@ -789,7 +416,7 @@ function HospitalsPanel({ facilities, toast, onChange }) {
               disabled={busy || form.name.trim().length < 2 || !form.services.trim() || (form.pincode && !/^\d{6}$/.test(form.pincode))}
               onClick={addHospital}
             >
-              Save hospital
+              {t("saveHospital")}
             </button>
           </div>
         </div>
@@ -809,25 +436,25 @@ function HospitalsPanel({ facilities, toast, onChange }) {
                     {f.pincode ? ` ${f.pincode}` : ""}
                   </p>
                   <p>
-                    {f.phone ? <a href={`tel:${f.phone}`}>{f.phone}</a> : "No phone yet"}
-                    {f.has_ambulance ? " · has ambulance" : ""}
-                    {f.source ? ` · Source: ${f.source}` : ""}
+                    {f.phone ? <a href={`tel:${f.phone}`}>{f.phone}</a> : t("noPhoneYet")}
+                    {f.has_ambulance ? ` · ${t("hasAmbulance")}` : ""}
+                    {f.source ? ` · ${t("source")}: ${f.source}` : ""}
                   </p>
                   <div className="ward-chips">
                     {(f.services || []).map((s) => (
                       <span key={s.service} className="step-chip">
-                        {s.service}
+                        {serviceText(t, s.service)}
                       </span>
                     ))}
                   </div>
                   <div className="ward-chips">
                     {(f.wards || []).length === 0 ? (
-                      <span className="step-chip">No bed data yet</span>
+                      <span className="step-chip">{t("noBedData")}</span>
                     ) : (
                       f.wards.map((w) => (
-                        <span key={w.ward} className="step-chip" title={w.stale ? "Not confirmed in the last 12 hours" : ""}>
-                          {pretty(w.ward).toLowerCase()}: <b>{w.free}</b> free of {w.total}
-                          {w.stale ? " · old" : ""}
+                        <span key={w.ward} className="step-chip" title={w.stale ? t("notConfirmed12h") : ""}>
+                          {wardText(t, w.ward)}: <b>{w.free}</b> {t("freeOf")} {w.total}
+                          {w.stale ? ` · ${t("old")}` : ""}
                         </span>
                       ))
                     )}
@@ -835,42 +462,42 @@ function HospitalsPanel({ facilities, toast, onChange }) {
                 </div>
                 <div className="queue-actions" style={{ alignSelf: "flex-start" }}>
                   <button className="secondary-btn" onClick={() => setOpen(open === f.id ? null : f.id)}>
-                    {open === f.id ? "Done" : "Manage"}
+                    {open === f.id ? t("done") : t("manage")}
                   </button>
                 </div>
               </div>
               {open === f.id && (
                 <div className="form-grid" style={{ marginTop: 12 }}>
-                  <Field label="Ward">
+                  <Field label={t("ward")}>
                     <select value={bed.ward} onChange={(e) => setBed((b) => ({ ...b, ward: e.target.value }))}>
                       {WARDS.map((w) => (
                         <option key={w} value={w}>
-                          {pretty(w).toLowerCase()}
+                          {wardText(t, w)}
                         </option>
                       ))}
                     </select>
                   </Field>
-                  <Field label="Total beds / occupied now">
+                  <Field label={t("totalOccupied")}>
                     <div style={{ display: "flex", gap: 8 }}>
-                      <input inputMode="numeric" placeholder="Total" value={bed.total}
+                      <input inputMode="numeric" placeholder={t("total")} value={bed.total}
                         onChange={(e) => setBed((b) => ({ ...b, total: e.target.value.replace(/\D/g, "") }))} />
-                      <input inputMode="numeric" placeholder="Occupied" value={bed.occupied}
+                      <input inputMode="numeric" placeholder={t("occupied")} value={bed.occupied}
                         onChange={(e) => setBed((b) => ({ ...b, occupied: e.target.value.replace(/\D/g, "") }))} />
                     </div>
                   </Field>
                   <div className="action-row" style={{ gridColumn: "1/-1", marginTop: 0 }}>
                     <button className="primary-btn" disabled={!bedsValid || busy} onClick={() => saveBeds(f)}>
-                      Save beds
+                      {t("saveBeds")}
                     </button>
                     <button className="secondary-btn" disabled={busy} onClick={() => toggleAmbulance(f)}>
-                      {f.has_ambulance ? "Mark: no ambulance" : "Mark: has ambulance"}
+                      {f.has_ambulance ? t("markNoAmbulance") : t("markHasAmbulance")}
                     </button>
                   </div>
-                  <Field label="Add a service this hospital offers" full>
+                  <Field label={t("addServiceLabel")} full>
                     <div style={{ display: "flex", gap: 8 }}>
-                      <input value={service} onChange={(e) => setService(e.target.value)} placeholder="e.g. Maternity" />
+                      <input value={service} onChange={(e) => setService(e.target.value)} placeholder="Maternity" />
                       <button className="secondary-btn" disabled={!service.trim() || busy} onClick={() => addService(f)}>
-                        Add
+                        {t("add")}
                       </button>
                     </div>
                   </Field>
@@ -887,15 +514,16 @@ function HospitalsPanel({ facilities, toast, onChange }) {
 // ---------- Shared pieces: emergency, teleconsult, beds, ambulance, re-routing ----------
 
 function EmergencyBox({ compact }) {
+  const { t } = useLanguage();
   return (
     <div className={`emergency-box ${compact ? "compact" : ""}`} role="note">
       <span className="emergency-dot" aria-hidden="true" />
       <div>
-        <b>Emergency ambulance: {EMERGENCY_NUMBER}</b>
-        {!compact && <small>Free, 24×7. Call when the hospital's own ambulance is not coming quickly.</small>}
+        <b>{t("emergencyAmbulance")}: {EMERGENCY_NUMBER}</b>
+        {!compact && <small>{t("emergencyAmbulanceSub")}</small>}
       </div>
       <a className="secondary-btn" href={`tel:${EMERGENCY_NUMBER}`}>
-        Call {EMERGENCY_NUMBER}
+        {t("call")} {EMERGENCY_NUMBER}
       </a>
     </div>
   );
@@ -908,7 +536,7 @@ function ESanjeevaniCard({ summary, toast }) {
     if (!summary) return;
     try {
       await navigator.clipboard.writeText(summary);
-      toast?.("Patient summary copied");
+      toast?.(t("summaryCopied"));
     } catch {
       toast?.(summary);
     }
@@ -939,12 +567,12 @@ function ESanjeevaniCard({ summary, toast }) {
               <p className="muted">{t("teleconsultSoon")}</p>
               {summary && (
                 <button className="secondary-btn" style={{ width: "100%", marginTop: 8 }} onClick={copySummary}>
-                  Copy patient summary for the doctor
+                  {t("copySummary")}
                 </button>
               )}
               <a className="primary-btn link-as-btn" href={ESANJEEVANI_URL} target="_blank" rel="noopener noreferrer"
                 onClick={() => setOpen(false)}>
-                Go to esanjeevani.mohfw.gov.in ↗
+                {t("goTo")} esanjeevani.mohfw.gov.in ↗
               </a>
             </div>
           </div>,
@@ -954,22 +582,22 @@ function ESanjeevaniCard({ summary, toast }) {
   );
 }
 
-const BED_TEXT = { HELD: "Bed held", OCCUPIED: "In bed", RELEASED: "Bed released", EXPIRED: "Bed hold expired" };
-
 function BedChip({ bed }) {
-  if (!bed) return <span className="chip muted-chip">No bed held</span>;
-  const ward = pretty(bed.ward).toLowerCase();
+  const { t } = useLanguage();
+  if (!bed) return <span className="chip muted-chip">{t("noBedHeld")}</span>;
+  const ward = wardText(t, bed.ward);
   return (
     <span className={`chip bed-${bed.status.toLowerCase()}`} title={bed.release_reason || ""}>
-      {BED_TEXT[bed.status]} · {ward}
-      {bed.status === "HELD" ? ` · until ${new Date(bed.held_until).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : ""}
+      {t(`bed_${bed.status}`)} · {ward}
+      {bed.status === "HELD" ? ` · ${t("until")} ${new Date(bed.held_until).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : ""}
     </span>
   );
 }
 
 function RecommendationRow({ r, picked, onPick }) {
+  const { t } = useLanguage();
   const beds =
-    r.ward === null ? "No bed needed" : r.beds_free === null ? "No bed data" : `${r.beds_free} of ${r.beds_total} free`;
+    r.ward === null ? t("noBedNeeded") : r.beds_free === null ? t("noBedData") : `${r.beds_free}/${r.beds_total} ${t("free")}`;
   const tone = r.ward === null || r.beds_free === null ? "" : r.beds_free > 0 ? "good" : "bad";
   return (
     <button className={`facility ${picked ? "picked" : ""}`} onClick={() => onPick(r)}>
@@ -978,7 +606,7 @@ function RecommendationRow({ r, picked, onPick }) {
         <span>
           {r.facility_type}
           {r.phone ? ` · ☎ ${r.phone}` : ""}
-          {r.has_ambulance ? " · ambulance" : ""}
+          {r.has_ambulance ? ` · ${t("ambulance")}` : ""}
         </span>
         <small className="spec-chips">
           {r.reasons.slice(0, 3).map((x) => (
@@ -992,10 +620,11 @@ function RecommendationRow({ r, picked, onPick }) {
 }
 
 function RerouteFinder({ referral, onDone, toast }) {
+  const { t } = useLanguage();
   const [alts, setAlts] = useState(null);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
-    api.get(`/referrals/${referral.id}/alternatives`).then(setAlts).catch((e) => toast(e.message));
+    api.get(`/referrals/${referral.id}/alternatives`).then(setAlts).catch((e) => toast(errorText(t, e)));
   }, [referral.id]);
   const send = async (alt, allow = false) => {
     setBusy(true);
@@ -1004,17 +633,17 @@ function RerouteFinder({ referral, onDone, toast }) {
         destination_facility_id: alt.facility_id,
         allow_without_bed: allow,
       });
-      toast(`Sent to ${alt.facility_name} · new code ${fresh.code}`);
+      toast(`${alt.facility_name} · ${t("newCode")} ${fresh.code}`);
       onDone(fresh);
     } catch (e) {
-      if (e.code === "NO_BEDS_AVAILABLE") toast(`${alt.facility_name} has no free bed now. Pick another.`);
-      else toast(e.message);
+      if (e.code === "NO_BEDS_AVAILABLE") toast(`${alt.facility_name}: ${t("noFreeBedPick")}`);
+      else toast(errorText(t, e));
     } finally {
       setBusy(false);
     }
   };
   if (alts === null) return <Skeleton />;
-  if (alts.length === 0) return <Empty title="No other hospital offers this service" text="Call the district office." />;
+  if (alts.length === 0) return <Empty title={t("noOtherHospital")} text={t("callOffice")} />;
   return (
     <div className="facility-list reveal">
       {alts.map((a) => (
@@ -1022,7 +651,7 @@ function RerouteFinder({ referral, onDone, toast }) {
           <RecommendationRow r={a} onPick={() => send(a)} />
           {a.beds_free === 0 && (
             <button className="link-btn" disabled={busy} onClick={() => send(a, true)}>
-              Send anyway
+              {t("sendAnyway")}
             </button>
           )}
         </div>
@@ -1031,23 +660,16 @@ function RerouteFinder({ referral, onDone, toast }) {
   );
 }
 
-const AMB_TEXT = {
-  REQUESTED: "Ambulance requested",
-  DISPATCHED: "Ambulance on the way",
-  PICKED_UP: "Patient in ambulance",
-  COMPLETED: "Reached hospital",
-  CANCELLED: "Ambulance cancelled",
-};
-
 function AmbulanceInfo({ amb }) {
+  const { t } = useLanguage();
   if (!amb) return null;
   return (
     <div className={`amb-card amb-${amb.status.toLowerCase()}`}>
-      <b>🚑 {AMB_TEXT[amb.status]}</b>
+      <b>🚑 {t(`amb_${amb.status}`)}</b>
       <small>
-        {amb.expected_at && amb.status === "DISPATCHED" ? `Expected ${fmtTime(amb.expected_at)}` : ""}
+        {amb.expected_at && amb.status === "DISPATCHED" ? `${t("expected")} ${fmtTime(amb.expected_at)}` : ""}
         {amb.vehicle_number ? ` · ${amb.vehicle_number}` : ""}
-        {amb.driver_phone ? ` · Driver ${amb.driver_phone}` : ""}
+        {amb.driver_phone ? ` · ${t("driver")} ${amb.driver_phone}` : ""}
         {amb.cancel_reason ? ` · ${amb.cancel_reason}` : ""}
       </small>
     </div>
@@ -1056,6 +678,7 @@ function AmbulanceInfo({ amb }) {
 
 // ASHA: ask the hospital for its ambulance, see it coming, or fall back to 108.
 function AshaAmbulance({ referral, onChange, toast }) {
+  const { t } = useLanguage();
   const [pickup, setPickup] = usePersisted(`sahyog_pickup_${referral.id}`, "");
   const [busy, setBusy] = useState(false);
   const amb = referral.ambulance;
@@ -1067,7 +690,7 @@ function AshaAmbulance({ referral, onChange, toast }) {
       onChange(await fn());
       toast(ok);
     } catch (e) {
-      toast(e.code === "NO_HOSPITAL_AMBULANCE" ? `${referral.facility.name} has no ambulance. Call ${EMERGENCY_NUMBER}.` : e.message);
+      toast(e.code === "NO_HOSPITAL_AMBULANCE" ? `${referral.facility.name}: ${t("noAmbulanceCall")} ${EMERGENCY_NUMBER}` : errorText(t, e));
     } finally {
       setBusy(false);
     }
@@ -1077,20 +700,20 @@ function AshaAmbulance({ referral, onChange, toast }) {
       <AmbulanceInfo amb={amb} />
       {canAsk && (
         <div className="inline-form">
-          <input value={pickup} onChange={(e) => setPickup(e.target.value)} placeholder="Pickup: village, landmark, house" />
+          <input value={pickup} onChange={(e) => setPickup(e.target.value)} placeholder={t("pickupPlaceholderAsha")} />
           <button
             className="secondary-btn"
             disabled={busy || pickup.trim().length < 3}
-            onClick={() => run(() => api.post(`/referrals/${referral.id}/ambulance`, { pickup_note: pickup.trim() }), "Ambulance requested")}
+            onClick={() => run(() => api.post(`/referrals/${referral.id}/ambulance`, { pickup_note: pickup.trim() }), t("amb_REQUESTED"))}
           >
-            Request hospital ambulance
+            {t("requestAmbulance")}
           </button>
         </div>
       )}
       {amb?.status === "DISPATCHED" && (
         <button className="secondary-btn" disabled={busy}
-          onClick={() => run(() => api.post(`/referrals/${referral.id}/ambulance/picked-up`), "Marked: patient picked up")}>
-          Patient is in the ambulance
+          onClick={() => run(() => api.post(`/referrals/${referral.id}/ambulance/picked-up`), t("markedPickedUp"))}>
+          {t("patientInAmbulance")}
         </button>
       )}
       {referral.is_open && ["CREATED", "ACCEPTED"].includes(referral.status) && <EmergencyBox compact />}
@@ -1100,6 +723,7 @@ function AshaAmbulance({ referral, onChange, toast }) {
 
 // Hospital desk: keep this hospital's beds current.
 function StaffBedsPanel({ facilityId, toast }) {
+  const { t } = useLanguage();
   const [facility, setFacility] = useState(null);
   const [bed, setBed] = usePersisted("sahyog_staff_bed_form", { ward: "GENERAL", total: "", occupied: "" });
   const [busy, setBusy] = useState(false);
@@ -1107,7 +731,7 @@ function StaffBedsPanel({ facilityId, toast }) {
     try {
       setFacility(await api.get(`/facilities/${facilityId}`));
     } catch (e) {
-      if (e.status !== 401) toast(e.message);
+      if (e.status !== 401) toast(errorText(t, e));
     }
   }, [facilityId, toast]);
   usePolling(load);
@@ -1120,9 +744,9 @@ function StaffBedsPanel({ facilityId, toast }) {
           occupied: Number(bed.occupied),
         }),
       );
-      toast(`${pretty(bed.ward).toLowerCase()} beds updated`);
+      toast(`${wardText(t, bed.ward)} · ${t("bedsSaved")}`);
     } catch (e) {
-      toast(e.message);
+      toast(errorText(t, e));
     } finally {
       setBusy(false);
     }
@@ -1132,214 +756,49 @@ function StaffBedsPanel({ facilityId, toast }) {
     <section className="panel" data-tour="beds" style={{ marginBottom: 18 }}>
       <div className="panel-head">
         <div>
-          <p className="eyebrow">Beds</p>
-          <h3>{facility ? facility.name : "Your hospital"}</h3>
+          <p className="eyebrow">{t("beds")}</p>
+          <h3>{facility ? facility.name : t("yourHospital")}</h3>
         </div>
       </div>
       <div className="ward-chips" style={{ marginBottom: 14 }}>
         {facility === null ? (
-          <span className="chip muted-chip">Loading…</span>
+          <span className="chip muted-chip">{t("loading")}</span>
         ) : facility.wards.length === 0 ? (
-          <span className="chip muted-chip">No beds reported yet. Add your first ward below.</span>
+          <span className="chip muted-chip">{t("noBedsYet")}</span>
         ) : (
           facility.wards.map((w) => (
-            <span key={w.ward} className={`chip ${w.free > 0 ? "bed-held" : "bed-expired"}`} title={w.stale ? "Not confirmed in 12 hours" : ""}>
-              {pretty(w.ward).toLowerCase()}: <b>{w.free}</b> free · {w.held} held · {w.occupied}/{w.total} occupied
-              {w.stale ? " · please confirm" : ""}
+            <span key={w.ward} className={`chip ${w.free > 0 ? "bed-held" : "bed-expired"}`} title={w.stale ? t("notConfirmed12h") : ""}>
+              {wardText(t, w.ward)}: <b>{w.free}</b> {t("free")} · {w.held} {t("held")} · {w.occupied}/{w.total} {t("occupied")}
+              {w.stale ? ` · ${t("pleaseConfirm")}` : ""}
             </span>
           ))
         )}
       </div>
       <div className="form-grid">
-        <Field label="Ward">
+        <Field label={t("ward")}>
           <select id="staff-ward" value={bed.ward} onChange={(e) => setBed({ ...bed, ward: e.target.value })}>
             {WARDS.map((w) => (
               <option key={w} value={w}>
-                {pretty(w).toLowerCase()}
+                {wardText(t, w)}
               </option>
             ))}
           </select>
         </Field>
-        <Field label="Total beds / occupied now">
+        <Field label={t("totalOccupied")}>
           <div style={{ display: "flex", gap: 8 }}>
-            <input id="staff-total" inputMode="numeric" placeholder="Total" value={bed.total}
+            <input id="staff-total" inputMode="numeric" placeholder={t("total")} value={bed.total}
               onChange={(e) => setBed({ ...bed, total: e.target.value.replace(/\D/g, "") })} />
-            <input id="staff-occupied" inputMode="numeric" placeholder="Occupied" value={bed.occupied}
+            <input id="staff-occupied" inputMode="numeric" placeholder={t("occupied")} value={bed.occupied}
               onChange={(e) => setBed({ ...bed, occupied: e.target.value.replace(/\D/g, "") })} />
           </div>
         </Field>
       </div>
       <div className="action-row">
         <button className="primary-btn" disabled={!valid || busy} onClick={save}>
-          Save beds
+          {t("saveBeds")}
         </button>
       </div>
     </section>
-  );
-}
-
-function Auth({ onSignIn, onTour }) {
-  const { t } = useLanguage();
-  const [role, setRole] = useState("asha");
-  const [email, setEmail] = useState("");
-  const [otp, setOtp] = useState("");
-  const [sent, setSent] = useState(false);
-  const [demoOtp, setDemoOtp] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [phoneOk, setPhoneOk] = useState(false);
-  useEffect(() => {
-    loginMethods()
-      .then((m) => setPhoneOk(!!m.phone))
-      .catch(() => {});
-  }, []);
-  const validId = isEmail(email) || (phoneOk && isMobile(email));
-  const sendOtp = async () => {
-    if (!validId || busy) return;
-    setBusy(true);
-    setError("");
-    try {
-      const r = await requestCode(email);
-      setOtp("");
-      setDemoOtp(r.dev_code || "");
-      setSent(true);
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setBusy(false);
-    }
-  };
-  const verify = async () => {
-    if (otp.length !== 6 || busy) return;
-    setBusy(true);
-    setError("");
-    try {
-      const user = await verifyCode(email, otp);
-      onSignIn({ screen: SCREEN_FOR[user.role], user });
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <div className="auth-screen">
-      <div className="auth-art">
-        <div className="orb orb1"></div>
-        <div className="orb orb2"></div>
-        <div className="care-illustration">✚</div>
-        <p className="eyebrow">SahyogCare · Kenshi</p>
-        <h1>
-          {t("oneReferral")}
-          <br />
-          <em>{t("oneJourney")}</em>
-        </h1>
-        <p className="muted-light">{t("authDescription")}</p>
-        <div className="auth-proof">
-          <span>✓</span> {t("offlineReady")}
-        </div>
-        <div className="auth-proof">
-          <span>✓</span> {t("closedLoop")}
-        </div>
-      </div>
-      <div className="auth-card-wrap">
-        <div className="auth-card">
-          <div className="mini-brand">
-            स <span>SahyogCare</span>
-          </div>
-          <button className="help-btn auth-help" onClick={onTour} aria-label="App tour" title="App tour">
-            ?
-          </button>
-          <h2>{t("welcome")}</h2>
-          <p className="muted">{t("chooseRole")}</p>
-          <div className="role-grid" data-tour="roles">
-            {Object.entries(ROLES).map(([key, r]) => (
-              <button
-                key={key}
-                className={`role-choice ${role === key ? "selected" : ""}`}
-                onClick={() => {
-                  setRole(key);
-                  setError("");
-                }}
-              >
-                <b>{r.icon}</b>
-                <span>{t(key)}</span>
-                <small>{t(`${key}Desc`)}</small>
-              </button>
-            ))}
-          </div>
-          {role === "patient" ? (
-            <>
-              <p className="muted" data-tour="email">
-                {t("patientNoLogin")}
-              </p>
-              <button className="primary-btn" onClick={() => onSignIn({ screen: "patient", user: null })}>
-                {t("continuePatient")} →
-              </button>
-            </>
-          ) : (
-            <>
-              <label>{phoneOk ? "Email or mobile number" : t("email")}</label>
-              <input
-                data-tour="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && !sent && sendOtp()}
-                readOnly={sent}
-                placeholder={phoneOk ? "you@gmail.com or 98XXXXXXXX" : "you@gmail.com"}
-                type={phoneOk ? "text" : "email"}
-                autoComplete={phoneOk ? "username" : "email"}
-              />
-              {!sent ? (
-                <button className="primary-btn" onClick={sendOtp} disabled={!validId || busy}>
-                  {busy ? t("loading") : t("sendCode")}
-                </button>
-              ) : (
-                <>
-                  <div className="otp-note">{t("otpNote")}</div>
-                  <input
-                    className="otp-input"
-                    value={otp}
-                    onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
-                    onKeyDown={(e) => e.key === "Enter" && verify()}
-                    placeholder="Enter 6-digit OTP"
-                    inputMode="numeric"
-                    maxLength="6"
-                    autoComplete="one-time-code"
-                    autoFocus
-                  />
-                  <button className="primary-btn" onClick={verify} disabled={otp.length !== 6 || busy}>
-                    {busy ? t("loading") : t("verify")}
-                  </button>
-                  <button
-                    className="link-btn"
-                    onClick={() => {
-                      setSent(false);
-                      setOtp("");
-                      setDemoOtp("");
-                      setError("");
-                    }}
-                  >
-                    {t("changeEmail")}
-                  </button>
-                  {demoOtp && (
-                    <div className="demo-code">
-                      Test OTP: <b>{demoOtp}</b>
-                    </div>
-                  )}
-                </>
-              )}
-            </>
-          )}
-          {error && (
-            <div className="otp-note" role="alert">
-              {error}
-            </div>
-          )}
-          <div className="auth-disclaimer">{t("demoAccounts")}</div>
-        </div>
-      </div>
-    </div>
   );
 }
 
@@ -1375,7 +834,7 @@ function AshaDashboard({ toast }) {
   const [referrals, setReferrals] = useState(null);
   const [alerts, setAlerts] = useState([]);
   const [busy, setBusy] = useState(false);
-  const fail = (e) => toast(e.message);
+  const fail = (e) => toast(errorText(t, e));
 
   const readReferralId = () => {
     try {
@@ -1460,7 +919,7 @@ function AshaDashboard({ toast }) {
       });
       setCurrent({ patient, encounter });
       setStep(1);
-      toast(patient.possible_duplicate_of ? "Saved. A patient with this name and phone already exists." : "Patient case saved");
+      toast(patient.possible_duplicate_of ? t("savedDuplicate") : t("caseSaved"));
     } catch (e) {
       fail(e);
     } finally {
@@ -1491,7 +950,7 @@ function AshaDashboard({ toast }) {
       setReferral(r);
       setNoBeds(null);
       setStep(2);
-      toast(r.bed ? "Referral sent · bed held" : "Referral sent");
+      toast(r.bed ? `${t("referralSent")} · ${t("bed_HELD")}` : t("referralSent"));
       load();
     } catch (e) {
       if (e.code === "NO_BEDS_AVAILABLE") setNoBeds({ message: e.message, alternatives: e.details.alternatives || [] });
@@ -1577,10 +1036,10 @@ function AshaDashboard({ toast }) {
       </div>
       <div className="view-tabs" role="tablist">
         <button role="tab" aria-selected={view === "patients"} className={view === "patients" ? "tab active" : "tab"} onClick={() => setView("patients")}>
-          👥 My patients
+          👥 {t("myPatients")}
         </button>
         <button role="tab" aria-selected={view === "referral"} className={view === "referral" ? "tab active" : "tab"} onClick={() => setView("referral")}>
-          ➜ Referral{referral?.is_open ? ` · ${referral.code}` : ""}
+          ➜ {t("referralTab")}{referral?.is_open ? ` · ${referral.code}` : ""}
         </button>
       </div>
       {view === "patients" && (
@@ -1588,7 +1047,7 @@ function AshaDashboard({ toast }) {
           {alerts.length > 0 && (
             <section className="panel alerts-strip">
               {alerts.slice(0, 4).map((n) => (
-                <div className="mini-ref" key={n.id} role="button" tabIndex={0} onClick={() => readAlert(n)} title="Mark as read">
+                <div className="mini-ref" key={n.id} role="button" tabIndex={0} onClick={() => readAlert(n)} title={t("markRead")}>
                   <b>🔔</b>
                   <span>{n.message}</span>
                   <small>{new Date(n.created_at).toLocaleTimeString()}</small>
@@ -1605,7 +1064,7 @@ function AshaDashboard({ toast }) {
         <div className="panel wide" data-tour="intake">
           <div className="panel-head">
             <div>
-              <p className="eyebrow">Feature 01</p>
+              <p className="eyebrow">{t("newReferralEyebrow")}</p>
               <h3>{t("patientIntake")}</h3>
             </div>
             <span className="step-chip">
@@ -1617,10 +1076,10 @@ function AshaDashboard({ toast }) {
           </div>
           {step === 0 && form.patientId && (
             <div className="known-patient">
-              <b>{form.name}</b> · {form.age} y · 📞 {form.phone}
-              <small>On your register — this referral is added to the same record.</small>
+              <b>{form.name}</b> · {form.age} {t("yearsShort")} · 📞 {form.phone}
+              <small>{t("onRegister")}</small>
               <button className="link-btn" onClick={newCase}>
-                Someone else
+                {t("someoneElse")}
               </button>
             </div>
           )}
@@ -1656,16 +1115,16 @@ function AshaDashboard({ toast }) {
               )}
               <Field label={t("triage")}>
                 <select value={form.triage} onChange={(e) => setForm({ ...form, triage: e.target.value })}>
-                  <option value="ROUTINE">Routine</option>
-                  <option value="PRIORITY">Priority</option>
-                  <option value="EMERGENCY">Emergency</option>
+                  <option value="ROUTINE">{t("routine")}</option>
+                  <option value="PRIORITY">{t("priority")}</option>
+                  <option value="EMERGENCY">{t("emergency")}</option>
                 </select>
               </Field>
               <Field label={t("symptoms")} full>
                 <textarea
                   value={form.symptom}
                   onChange={(e) => setForm({ ...form, symptom: e.target.value })}
-                  placeholder="Administrative summary only — no autonomous diagnosis."
+                  placeholder={t("symptomsPlaceholder")}
                 />
               </Field>
               {!form.patientId && (
@@ -1691,20 +1150,20 @@ function AshaDashboard({ toast }) {
                   <select id="asha-service" value={service} onChange={(e) => (setService(e.target.value), setSelected(null))}>
                     {SERVICES.map((x) => (
                       <option key={x} value={x}>
-                        {x}
+                        {serviceText(t, x)}
                       </option>
                     ))}
                   </select>
                 </Field>
                 <Field label={t("searchFacility")}>
-                  <input id="asha-search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Hospital name" />
+                  <input id="asha-search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t("hospitalName")} />
                 </Field>
               </div>
-              <p className="muted small-note">Best match first: free beds in the right ward, recent answers, and distance.</p>
+              <p className="muted small-note">{t("bestMatchFirst")}</p>
               {loadingFacilities && facilities.length === 0 ? (
                 <Skeleton />
               ) : shown.length === 0 ? (
-                <Empty title={t("noFacility")} text="No hospital in your area lists this service yet." />
+                <Empty title={t("noFacility")} text={t("noHospitalService")} />
               ) : (
                 <div className="facility-list">
                   {shown.map((f) => (
@@ -1715,19 +1174,19 @@ function AshaDashboard({ toast }) {
               {noBeds && (
                 <div className="notice warn reveal" role="alert">
                   <b>{noBeds.message}</b>
-                  {noBeds.alternatives.length > 0 && <p>These have free beds now:</p>}
+                  {noBeds.alternatives.length > 0 && <p>{t("theseHaveBeds")}</p>}
                   <div className="facility-list">
                     {noBeds.alternatives.map((a) => (
                       <RecommendationRow key={a.facility_id} r={a} onPick={(x) => (setSelected(x), createReferral(false, x))} />
                     ))}
                   </div>
                   <button className="link-btn" disabled={busy} onClick={() => createReferral(true)}>
-                    Send to {selected?.facility_name} anyway (no bed held)
+                    {selected?.facility_name}: {t("sendWithoutBed")}
                   </button>
                 </div>
               )}
               {!current?.encounter && (
-                <p className="muted small-note">Save the patient's case first (step 1).</p>
+                <p className="muted small-note">{t("saveCaseFirst")}</p>
               )}
               <button className="primary-btn" disabled={!selected || !current?.encounter || busy} onClick={() => createReferral()}>
                 {busy ? t("loading") : t("createReferral")}
@@ -1751,18 +1210,18 @@ function AshaDashboard({ toast }) {
                   {t("copyPass")}
                 </button>
               )}
-              <h3>{referral.is_open ? t("referralLive") : pretty(referral.status)}</h3>
+              <h3>{referral.is_open ? t("referralLive") : statusText(t, referral.status)}</h3>
               <p>
-                {referral.patient.name} → {referral.facility.name} · {referral.requested_service}
+                {referral.patient.name} → {referral.facility.name} · {serviceText(t, referral.requested_service)}
               </p>
               <div className="ward-chips" style={{ justifyContent: "center" }}>
                 <BedChip bed={referral.bed} />
-                {referral.rerouted_from_code && <span className="chip">Continues {referral.rerouted_from_code}</span>}
-                {referral.rerouted_to_code && <span className="chip bed-released">Sent on as {referral.rerouted_to_code}</span>}
+                {referral.rerouted_from_code && <span className="chip">{t("continues")} {referral.rerouted_from_code}</span>}
+                {referral.rerouted_to_code && <span className="chip bed-released">{t("sentOnAs")} {referral.rerouted_to_code}</span>}
               </div>
               {referral.facility.phone && (
                 <p className="muted">
-                  Hospital desk: <a href={`tel:${referral.facility.phone}`}>{referral.facility.phone}</a>
+                  {t("hospitalDesk")}: <a href={`tel:${referral.facility.phone}`}>{referral.facility.phone}</a>
                 </p>
               )}
               <AshaAmbulance referral={referral} onChange={(r) => (setReferralState(r), load())} toast={toast} />
@@ -1770,11 +1229,11 @@ function AshaDashboard({ toast }) {
                 <div className="reroute-block">
                   {!rerouting ? (
                     <button className="secondary-btn" onClick={() => setRerouting(true)}>
-                      {referral.status === "REJECTED" ? "Choose another hospital" : "Send to another hospital"}
+                      {referral.status === "REJECTED" ? t("chooseAnother") : t("sendAnother")}
                     </button>
                   ) : (
                     <>
-                      <p className="muted small-note">Other hospitals for {referral.requested_service}, best first:</p>
+                      <p className="muted small-note">{t("otherHospitalsFor")} {serviceText(t, referral.requested_service)}</p>
                       <RerouteFinder
                         referral={referral}
                         toast={toast}
@@ -1824,7 +1283,7 @@ function AshaDashboard({ toast }) {
                   <div className="timeline-item active" key={i}>
                     <i></i>
                     <div>
-                      <b>{pretty(h.to_status)}</b>
+                      <b>{statusText(t, h.to_status)}</b>
                       <small>{new Date(h.at).toLocaleString()}</small>
                     </div>
                   </div>
@@ -1834,11 +1293,11 @@ function AshaDashboard({ toast }) {
           )}
         </div>
         <div className="panel" data-tour="continuity">
-          <p className="eyebrow">Feature 03</p>
+          <p className="eyebrow">{t("myReferralsEyebrow")}</p>
           <h3>{t("myContinuity")}</h3>
           <p className="muted">{t("continuityText")}</p>
           {alerts.slice(0, 3).map((n) => (
-            <div className="mini-ref" key={n.id} role="button" tabIndex={0} onClick={() => readAlert(n)} title="Mark as read">
+            <div className="mini-ref" key={n.id} role="button" tabIndex={0} onClick={() => readAlert(n)} title={t("markRead")}>
               <b>🔔</b>
               <span>{n.message}</span>
               <small>{new Date(n.created_at).toLocaleTimeString()}</small>
@@ -1856,7 +1315,7 @@ function AshaDashboard({ toast }) {
                 <div className="mini-ref" key={r.id} role="button" tabIndex={0} onClick={() => openReferral(r)}>
                   <b>{r.code}</b>
                   <span>{r.patient.name}</span>
-                  <small>{pretty(r.status)}</small>
+                  <small>{statusText(t, r.status)}</small>
                 </div>
               ))
           )}
@@ -1902,8 +1361,8 @@ function VitalsPanel({ patient, referral, toast }) {
       <section className="panel vitals-panel">
         <div className="empty">
           <div>♡</div>
-          <h4>Select a patient case first</h4>
-          <p>Readings appear here after a case is created. Medicines are on the patient's record (My patients).</p>
+          <h4>{t("selectCaseFirst")}</h4>
+          <p>{t("selectCaseFirstSub")}</p>
         </div>
       </section>
     );
@@ -1933,7 +1392,7 @@ function VitalsPanel({ patient, referral, toast }) {
     <section className="panel vitals-panel" data-tour="vitals">
       <div className="panel-head">
         <div>
-          <p className="eyebrow">Feature 02</p>
+          <p className="eyebrow">{t("readingsEyebrow")}</p>
           <h3>{t("vitalsTitle")}</h3>
           <p className="muted">{patient.name}</p>
         </div>
@@ -1954,7 +1413,7 @@ function VitalsPanel({ patient, referral, toast }) {
           {busy ? t("loading") : t("updateVitals")}
         </button>
       </div>
-      <p className="medical-note">ℹ Normal ranges are for adults at rest and are guides only; children and pregnancy differ. The ASHA and doctor decide.</p>
+      <p className="medical-note">ℹ {t("rangesNote")}</p>
     </section>
   );
 }
@@ -1977,7 +1436,7 @@ function PatientDashboard({ toast }) {
       setResult(await lookupReferral(c.trim().toUpperCase(), l));
     } catch (err) {
       setResult(null);
-      setError(err.message);
+      setError(errorText(t, err));
     } finally {
       setBusy(false);
     }
@@ -1990,7 +1449,7 @@ function PatientDashboard({ toast }) {
   useEffect(() => {
     if (code && last4.length === 4) lookup();
   }, []);
-  const status = result ? pretty(result.status) : "";
+  const status = result ? statusText(t, result.status) : "";
   return (
     <Dashboard title={t("patientDashboard")} subtitle={t("patientSub")}>
       <div className="view-tabs" role="tablist">
@@ -2014,24 +1473,24 @@ function PatientDashboard({ toast }) {
         <Stat
           label={t("destination")}
           value={result?.facility_name?.split(" ")[0] || "—"}
-          meta={result?.facility_name || "No facility yet"}
+          meta={result?.facility_name || t("noFacilityYet")}
         />
-        <Stat label={t("currentStatus")} value={status || "Not started"} meta={t("updatedShared")} />
+        <Stat label={t("currentStatus")} value={status || t("notStarted")} meta={t("updatedShared")} />
       </div>
       <section className="feature-grid">
         <div className="panel wide">
           <div className="panel-head">
             <div>
-              <p className="eyebrow">Feature 02</p>
+              <p className="eyebrow">{t("trackReferral")}</p>
               <h3>{t("referralPass")}</h3>
             </div>
-            <span className="status-badge">{status || "No referral"}</span>
+            <span className="status-badge">{status || t("noReferralShort")}</span>
           </div>
           <form className="lookup" data-tour="token" onSubmit={find}>
             <input
               value={code}
               onChange={(e) => setCode(e.target.value)}
-              placeholder="Referral code e.g. SC-7K3M9Q"
+              placeholder={`${t("referralCode")} (SC-7K3M9Q)`}
               autoCapitalize="characters"
             />
             <input
@@ -2050,13 +1509,13 @@ function PatientDashboard({ toast }) {
               {result.rerouted_to_code ? (
                 <div className="notice good">
                   <b>
-                    You were sent to {result.rerouted_to_facility}. Your new code is {result.rerouted_to_code}.
+                    {t("youWereSentTo")} {result.rerouted_to_facility}. {t("yourNewCode")}: {result.rerouted_to_code}
                   </b>
                   <button
                     className="secondary-btn"
                     onClick={() => (setCode(result.rerouted_to_code), lookup(result.rerouted_to_code, last4))}
                   >
-                    Track the new referral
+                    {t("trackNew")}
                   </button>
                 </div>
               ) : result.status === "REJECTED" ? (
@@ -2084,7 +1543,7 @@ function PatientDashboard({ toast }) {
       </>
       )}
       <EmergencyBox />
-      <ESanjeevaniCard toast={toast} summary={result ? `SahyogCare referral ${result.code} to ${result.facility_name}.` : ""} />
+      <ESanjeevaniCard toast={toast} summary={result ? `SahyogCare ${result.code} → ${result.facility_name}.` : ""} />
     </Dashboard>
   );
 }
@@ -2100,7 +1559,7 @@ function PatientJourney({ status }) {
         <div className={`journey-step ${i <= idx ? "done" : ""} ${i === idx ? "current" : ""}`} key={s}>
           <span>{i < idx ? "✓" : i === idx ? "•" : "○"}</span>
           <div>
-            <b>{pretty(i === idx ? status : s)}</b>
+            <b>{statusText(t, i === idx ? status : s)}</b>
             <small>{i === idx ? t("currentStatus") : i < idx ? t("completed") : t("nextStep")}</small>
           </div>
         </div>
@@ -2122,7 +1581,7 @@ const NEXT_ACTION = {
   OVERDUE: { path: "close", label: "checkupDone", role: "FACILITY_STAFF", also: "DOCTOR" },
   ESCALATED: { path: "close", label: "checkupDone", role: "FACILITY_STAFF", also: "DOCTOR" },
 };
-const ROLE_NAME = { FACILITY_STAFF: "facility staff", DOCTOR: "doctor", COORDINATOR: "coordinator" };
+const ROLE_NAME = { FACILITY_STAFF: "roleStaff", DOCTOR: "roleDoctor", COORDINATOR: "doorOffice" };
 
 function MedicalDashboard({ user, toast }) {
   const { t } = useLanguage();
@@ -2137,7 +1596,7 @@ function MedicalDashboard({ user, toast }) {
   const [busyId, setBusyId] = useState(null);
   const [recordFor, setRecordFor] = useState(null); // referral whose patient record is open
   const ranges = useVitalRanges();
-  const fail = (e) => toast(e.message);
+  const fail = (e) => toast(errorText(t, e));
 
   const load = useCallback(async () => {
     try {
@@ -2160,7 +1619,7 @@ function MedicalDashboard({ user, toast }) {
     try {
       const updated = await api.post(`/referrals/${r.id}/${path}`, body);
       replace(updated);
-      toast(`${r.code} · ${pretty(updated.status)}`);
+      toast(`${r.code} · ${statusText(t, updated.status)}`);
       return true;
     } catch (e) {
       fail(e);
@@ -2185,7 +1644,7 @@ function MedicalDashboard({ user, toast }) {
   const queue = (
     filter === "Closed"
       ? list.filter((r) => !r.is_open)
-      : open.filter((r) => filter === "ALL" || TRIAGE_LABEL[r.triage] === filter)
+      : open.filter((r) => filter === "ALL" || r.triage === filter)
   )
     .slice()
     .sort((a, b) => (rank[a.triage] ?? 3) - (rank[b.triage] ?? 3) || new Date(a.created_at) - new Date(b.created_at));
@@ -2206,13 +1665,13 @@ function MedicalDashboard({ user, toast }) {
       <section className="panel">
         <div className="panel-head">
           <div>
-            <p className="eyebrow">Feature 03</p>
+            <p className="eyebrow">{t("queueEyebrow")}</p>
             <h3>{t("operationsQueue")}</h3>
           </div>
           <div className="filters" data-tour="filters">
-            {["ALL", "Emergency", "Priority", "Routine", "Closed"].map((f) => (
+            {[["ALL", "all"], ["EMERGENCY", "emergency"], ["PRIORITY", "priority"], ["ROUTINE", "routine"], ["Closed", "closed"]].map(([f, k]) => (
               <button key={f} className={filter === f ? "filter active" : "filter"} onClick={() => setFilter(f)}>
-                {f}
+                {t(k)}
               </button>
             ))}
           </div>
@@ -2229,16 +1688,16 @@ function MedicalDashboard({ user, toast }) {
               return (
                 <div className="queue-item" key={r.id} style={rejecting === r.id ? { flexWrap: "wrap" } : undefined}>
                   <div>
-                    <span className={`urgency ${r.triage.toLowerCase()}`}>{TRIAGE_LABEL[r.triage]}</span>
+                    <span className={`urgency ${r.triage.toLowerCase()}`}>{t(TRIAGE_KEY[r.triage])}</span>
                     <h4>{r.patient.name}</h4>
                     <p>
-                      {r.code} · {r.facility.name} · {r.requested_service}
+                      {r.code} · {r.facility.name} · {serviceText(t, r.requested_service)}
                     </p>
                     <p>{r.reason}</p>
-                    {r.origin === "PATIENT_EMERGENCY" && <span className="chip deceased-chip">🚨 Booked by the patient at night</span>}
+                    {r.origin === "PATIENT_EMERGENCY" && <span className="chip deceased-chip">🚨 {t("bookedByPatient")}</span>}
                     {r.latest_vitals ? (
                       <div className="queue-vitals">
-                        <small className="muted">Latest readings · {new Date(r.latest_vitals_at).toLocaleString()}</small>
+                        <small className="muted">{t("latestReadings")} · {new Date(r.latest_vitals_at).toLocaleString()}</small>
                         <VitalsReadout vitals={r.latest_vitals} flags={r.vitals_flags} ranges={ranges} />
                       </div>
                     ) : (
@@ -2248,8 +1707,8 @@ function MedicalDashboard({ user, toast }) {
                     )}
                     <div className="ward-chips">
                       <BedChip bed={r.bed} />
-                      {r.rerouted_from_code && <span className="chip">Sent on from {r.rerouted_from_code}</span>}
-                      {r.status === "REROUTED" && <span className="chip bed-released">Patient sent elsewhere</span>}
+                      {r.rerouted_from_code && <span className="chip">{t("sentOnFrom")} {r.rerouted_from_code}</span>}
+                      {r.status === "REROUTED" && <span className="chip bed-released">{t("sentElsewhere")}</span>}
                     </div>
                     <AmbulanceInfo amb={r.ambulance} />
                     {r.follow_up && r.is_open && r.follow_up.status !== "COMPLETED" && (
@@ -2262,7 +1721,7 @@ function MedicalDashboard({ user, toast }) {
                     )}
                   </div>
                   <div className="queue-actions">
-                    <span className="status-badge">{pretty(r.status)}</span>
+                    <span className="status-badge">{statusText(t, r.status)}</span>
                     <div style={{ display: "flex", gap: 9, alignItems: "center", flexWrap: "wrap" }}>
                       {!r.is_open ? (
                         <button className="secondary-btn" disabled>
@@ -2272,10 +1731,10 @@ function MedicalDashboard({ user, toast }) {
                         <button
                           className="secondary-btn"
                           disabled={!mine || busyId === r.id}
-                          title={mine ? "" : `${t("waitingFor")} ${ROLE_NAME[next.role]}`}
+                          title={mine ? "" : `${t("waitingFor")} ${t(ROLE_NAME[next.role])}`}
                           onClick={() => act(r, next.path)}
                         >
-                          {mine ? t(next.label) : `${t("waitingFor")} ${ROLE_NAME[next.role]}`}
+                          {mine ? t(next.label) : `${t("waitingFor")} ${t(ROLE_NAME[next.role])}`}
                         </button>
                       ) : (
                         <button className="secondary-btn" disabled>
@@ -2284,16 +1743,16 @@ function MedicalDashboard({ user, toast }) {
                       )}
                       {user?.role === "FACILITY_STAFF" && r.ambulance?.status === "REQUESTED" && dispatching !== r.id && (
                         <button className="primary-btn" onClick={() => setDispatching(r.id)}>
-                          Send ambulance
+                          {t("sendAmbulance")}
                         </button>
                       )}
                       {user?.role === "FACILITY_STAFF" && r.ambulance?.status === "DISPATCHED" && (
                         <button className="secondary-btn" disabled={busyId === r.id} onClick={() => act(r, "ambulance/picked-up")}>
-                          Patient picked up
+                          {t("patientPickedUp")}
                         </button>
                       )}
                       <button className="link-btn" onClick={() => setRecordFor(recordFor === r.id ? null : r.id)}>
-                        {recordFor === r.id ? "Hide record" : "📋 Patient record"}
+                        {recordFor === r.id ? t("hideRecord") : `📋 ${t("patientRecord")}`}
                       </button>
                       {r.status === "CREATED" && user?.role === "FACILITY_STAFF" && rejecting !== r.id && (
                         <button className="secondary-btn" onClick={() => setRejecting(r.id)} disabled={busyId === r.id}>
@@ -2315,18 +1774,18 @@ function MedicalDashboard({ user, toast }) {
                   )}
                   {dispatching === r.id && (
                     <div className="form-grid reveal" style={{ width: "100%", marginTop: 10 }}>
-                      <Field label="Pickup">
+                      <Field label={t("pickup")}>
                         <input value={r.ambulance?.pickup_note || ""} readOnly />
                       </Field>
-                      <Field label="Arrives in (minutes)">
+                      <Field label={t("arrivesIn")}>
                         <input id="dispatch-eta" inputMode="numeric" value={trip.eta}
                           onChange={(e) => setTrip({ ...trip, eta: e.target.value.replace(/\D/g, "").slice(0, 3) })} />
                       </Field>
-                      <Field label="Vehicle number">
+                      <Field label={t("vehicleNumber")}>
                         <input id="dispatch-vehicle" value={trip.vehicle} placeholder="WB-xx-xxxx"
                           onChange={(e) => setTrip({ ...trip, vehicle: e.target.value.toUpperCase() })} />
                       </Field>
-                      <Field label="Driver's mobile">
+                      <Field label={t("driverMobile")}>
                         <input id="dispatch-driver" inputMode="tel" value={trip.driver}
                           onChange={(e) => setTrip({ ...trip, driver: e.target.value.replace(/\D/g, "").slice(0, 10) })} />
                       </Field>
@@ -2346,7 +1805,7 @@ function MedicalDashboard({ user, toast }) {
                             }
                           }}
                         >
-                          Confirm: ambulance sent
+                          {t("confirmAmbulanceSent")}
                         </button>
                         <button
                           className="secondary-btn"
@@ -2355,7 +1814,7 @@ function MedicalDashboard({ user, toast }) {
                             if (await act(r, "ambulance/cancel", { reason: "Hospital ambulance not available" })) setDispatching(null);
                           }}
                         >
-                          Can't send (tell ASHA to call 108)
+                          {t("cantSendAmbulance")}
                         </button>
                         <button className="link-btn" onClick={() => setDispatching(null)}>
                           {t("cancel")}
@@ -2374,7 +1833,7 @@ function MedicalDashboard({ user, toast }) {
                           ))}
                         </select>
                       </Field>
-                      <Field label="Note">
+                      <Field label={t("note")}>
                         <input value={note} onChange={(e) => setNote(e.target.value)} placeholder={t("optional")} />
                       </Field>
                       <div className="action-row" style={{ gridColumn: "1 / -1" }}>
@@ -2419,11 +1878,11 @@ function PassScanner({ toast, onDone }) {
     setBusy(true);
     try {
       const r = await api.post("/referral-passes/verify", { qr_text: qrText.trim() });
-      toast(`${r.referral.code} · ${r.already_recorded ? pretty(r.referral.status) : t("recordArrival")} ✓`);
+      toast(`${r.referral.code} · ${r.already_recorded ? statusText(t, r.referral.status) : t("recordArrival")} ✓`);
       setText("");
       onDone(r.referral);
     } catch (e) {
-      toast(e.message);
+      toast(errorText(t, e));
     } finally {
       setBusy(false);
     }

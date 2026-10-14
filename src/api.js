@@ -108,17 +108,33 @@ const identity = (who) => (/^[6-9]\d{9}$/.test(who.trim()) ? { phone: who.trim()
 export const requestCode = (who) => send("POST", "/auth/otp/request", identity(who));
 export const loginMethods = () => send("GET", "/auth/methods");
 
+// Returns { codeRequired, codeToken } when the person's personal code is needed next,
+// otherwise logs in and returns { user, newCode } (newCode only when a code was just made).
 export async function verifyCode(who, code) {
   const t = await send("POST", "/auth/otp/verify", { ...identity(who), code });
+  if (t.code_required) return { codeRequired: true, codeToken: t.code_token };
   saveAuth({ access: t.access_token, refresh: t.refresh_token, user: t.user });
-  return t.user;
+  return { user: t.user, newCode: t.new_code || null };
+}
+
+// Second step of login: the personal code.
+export async function loginWithPersonalCode(codeToken, code) {
+  const t = await send("POST", "/auth/code", { code_token: codeToken, code });
+  saveAuth({ access: t.access_token, refresh: t.refresh_token, user: t.user });
+  return { user: t.user, newCode: t.new_code || null };
+}
+
+// The person has written their new personal code down; the server forgets the plain copy.
+export async function markCodeSeen() {
+  await request("POST", "/me/code-seen", {});
 }
 
 // Fetch the logged-in user again (e.g. to see whether the coordinator approved them).
+// The reply may carry `new_code` (shown once, right after approval).
 export async function refreshMe() {
-  const user = await request("GET", "/me");
+  const { new_code, ...user } = await request("GET", "/me");
   if (auth) saveAuth({ ...auth, user });
-  return user;
+  return { ...user, new_code };
 }
 
 // ---------- public (no login) ----------

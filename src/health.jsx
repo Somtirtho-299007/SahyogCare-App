@@ -3,40 +3,41 @@
 // the night emergency button.
 import React, { useCallback, useEffect, useState } from "react";
 import { api, patientApi, patientLogin, patientLogout, patientToken, photoUrl, uploadPhoto } from "./api.js";
-import { useLanguage } from "./i18n.jsx";
+import { errorText, useLanguage } from "./i18n.jsx";
 import { Empty, Field, Skeleton } from "./ui.jsx";
 
 const pretty = (s) => (s || "").replaceAll("_", " ").toLowerCase().replace(/^./, (c) => c.toUpperCase());
+// A server word (status, kind…) in the person's language; falls back to readable English.
+const said = (t, prefix, s) => {
+  const k = `${prefix}${s}`;
+  const v = t(k);
+  return v === k ? pretty(s) : v;
+};
 const day = (d) => (d ? new Date(d).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "—");
 const when = (d) => (d ? new Date(d).toLocaleString(undefined, { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : "—");
 
 export const VITALS = [
-  { key: "systolic", label: "BP (upper)", unit: "mmHg" },
-  { key: "diastolic", label: "BP (lower)", unit: "mmHg" },
-  { key: "pulse", label: "Pulse", unit: "/min" },
-  { key: "temperature_c", label: "Temperature", unit: "°C" },
-  { key: "spo2", label: "Oxygen (SpO₂)", unit: "%" },
-  { key: "respiratory_rate", label: "Breathing rate", unit: "/min" },
-  { key: "glucose_mg_dl", label: "Blood sugar", unit: "mg/dL" },
-  { key: "weight_kg", label: "Weight", unit: "kg" },
+  // label: an i18n key (vl_*)
+  { key: "systolic", label: "vl_systolic", unit: "mmHg" },
+  { key: "diastolic", label: "vl_diastolic", unit: "mmHg" },
+  { key: "pulse", label: "vl_pulse", unit: "/min" },
+  { key: "temperature_c", label: "vl_temperature", unit: "°C" },
+  { key: "spo2", label: "vl_spo2", unit: "%" },
+  { key: "respiratory_rate", label: "vl_breathing", unit: "/min" },
+  { key: "glucose_mg_dl", label: "vl_sugar", unit: "mg/dL" },
+  { key: "weight_kg", label: "vl_weight", unit: "kg" },
 ];
+// Labels are i18n keys: tm_* (times of day), tmh_* (short column heads), food_*, cat_*.
 const TIMINGS = [
-  ["MORNING", "Morning"],
-  ["NOON", "Afternoon"],
-  ["EVENING", "Evening"],
-  ["NIGHT", "Night"],
+  ["MORNING", "tm_MORNING"],
+  ["NOON", "tm_NOON"],
+  ["EVENING", "tm_EVENING"],
+  ["NIGHT", "tm_NIGHT"],
 ];
 // Column heads of the medicine timetable (short enough for a phone).
-const TIMING_HEAD = { MORNING: ["☀", "Morn"], NOON: ["🌤", "Noon"], EVENING: ["🌇", "Eve"], NIGHT: ["🌙", "Night"] };
-const FOOD = { BEFORE: "Before food", AFTER: "After food", WITH: "With food", ANY: "" };
-const CATEGORIES = [
-  ["GENERAL", "General"],
-  ["PREGNANCY", "Pregnancy"],
-  ["AFTER_SURGERY", "After surgery"],
-  ["CHRONIC", "Long-term illness"],
-  ["CHILD", "Child"],
-  ["OTHER", "Other"],
-];
+const TIMING_HEAD = { MORNING: ["☀", "tmh_MORNING"], NOON: ["🌤", "tmh_NOON"], EVENING: ["🌇", "tmh_EVENING"], NIGHT: ["🌙", "tmh_NIGHT"] };
+const FOOD = { BEFORE: "food_BEFORE", AFTER: "food_AFTER", WITH: "food_WITH", ANY: "" };
+const CATEGORIES = ["GENERAL", "PREGNANCY", "AFTER_SURGERY", "CHRONIC", "CHILD", "OTHER"].map((k) => [k, `cat_${k}`]);
 const LANGS = [
   ["bn", "বাংলা (Bengali)"],
   ["hi", "हिन्दी (Hindi)"],
@@ -68,11 +69,13 @@ export function flagOf(range, value) {
 }
 
 export function FlagChip({ flag }) {
+  const { t } = useLanguage();
   if (!flag) return null;
-  return <span className={`flag flag-${flag.toLowerCase()}`}>{flag === "NORMAL" ? "Normal" : flag === "LOW" ? "Low" : "High"}</span>;
+  return <span className={`flag flag-${flag.toLowerCase()}`}>{t(`flag_${flag}`)}</span>;
 }
 
 export function VitalsGrid({ values, onChange, ranges }) {
+  const { t } = useLanguage();
   return (
     <div className="vitals-grid">
       {VITALS.map((v) => {
@@ -80,7 +83,7 @@ export function VitalsGrid({ values, onChange, ranges }) {
         return (
           <label className="vital-field" key={v.key}>
             <span>
-              {v.label} <FlagChip flag={flagOf(range, values[v.key])} />
+              {t(v.label)} <FlagChip flag={flagOf(range, values[v.key])} />
             </span>
             <div>
               <input
@@ -93,7 +96,7 @@ export function VitalsGrid({ values, onChange, ranges }) {
               />
               <small>{v.unit}</small>
             </div>
-            <em className="range-note">{range ? `Normal ${range.label}` : " "}</em>
+            <em className="range-note">{range ? `${t("normalRange")} ${range.label}` : " "}</em>
           </label>
         );
       })}
@@ -102,18 +105,19 @@ export function VitalsGrid({ values, onChange, ranges }) {
 }
 
 export function VitalsReadout({ vitals, flags = {}, ranges = {} }) {
+  const { t } = useLanguage();
   const shown = VITALS.filter((v) => vitals?.[v.key] !== null && vitals?.[v.key] !== undefined);
-  if (!shown.length) return <p className="muted">No readings.</p>;
+  if (!shown.length) return <p className="muted">{t("noReadings")}</p>;
   return (
     <div className="vitals-readout">
       {shown.map((v) => (
         <div key={v.key}>
-          <span>{v.label}</span>
+          <span>{t(v.label)}</span>
           <b>
             {vitals[v.key]} <small>{v.unit}</small>
           </b>
           <FlagChip flag={flags[v.key] || flagOf(ranges[v.key], vitals[v.key])} />
-          {ranges[v.key] && <em>Normal {ranges[v.key].label}</em>}
+          {ranges[v.key] && <em>{t("normalRange")} {ranges[v.key].label}</em>}
         </div>
       ))}
     </div>
@@ -122,8 +126,8 @@ export function VitalsReadout({ vitals, flags = {}, ranges = {} }) {
 
 const vitalsBody = (values) =>
   Object.fromEntries(VITALS.filter((v) => values[v.key] !== "" && values[v.key] !== undefined).map((v) => [v.key, Number(values[v.key])]));
-const fieldErrors = (e) =>
-  e.details?.fields ? `${e.message} ${Object.entries(e.details.fields).map(([k, m]) => `${k}: ${m}`).join(" · ")}` : e.message;
+const fieldErrors = (e, t) =>
+  e.details?.fields ? `${e.message} ${Object.entries(e.details.fields).map(([k, m]) => `${k}: ${m}`).join(" · ")}` : t ? errorText(t, e) : e.message;
 
 // ---------- photos ----------
 
@@ -149,7 +153,8 @@ export function PhotoView({ id, asPatient = false, alt = "Photo", className = "p
 }
 
 // Two buttons: take a photo with the camera, or pick one from the gallery.
-export function PhotoPicker({ label = "Photo", onFile, busy }) {
+export function PhotoPicker({ label, onFile, busy }) {
+  const { t } = useLanguage();
   const pick = (e) => {
     const f = e.target.files?.[0];
     e.target.value = "";
@@ -158,11 +163,11 @@ export function PhotoPicker({ label = "Photo", onFile, busy }) {
   return (
     <div className="photo-picker">
       <label className={`secondary-btn ${busy ? "is-busy" : ""}`}>
-        📷 {label}
+        📷 {label || t("photo")}
         <input type="file" accept="image/*" capture="environment" onChange={pick} hidden disabled={busy} />
       </label>
       <label className={`link-btn ${busy ? "is-busy" : ""}`}>
-        Choose from gallery
+        {t("fromGallery")}
         <input type="file" accept="image/*" onChange={pick} hidden disabled={busy} />
       </label>
     </div>
@@ -171,20 +176,21 @@ export function PhotoPicker({ label = "Photo", onFile, busy }) {
 
 // ---------- care chart ----------
 
-export function CareChart({ items, onEnd, empty = "Nothing on the chart." }) {
-  if (!items.length) return <p className="muted">{empty}</p>;
+export function CareChart({ items, onEnd, empty }) {
+  const { t } = useLanguage();
+  if (!items.length) return <p className="muted">{empty || t("chartEmpty")}</p>;
   const medicines = items.filter((i) => i.kind === "MEDICINE");
   const practices = items.filter((i) => i.kind === "PRACTICE");
   return (
     <div className="care-chart">
       {medicines.length > 0 && (
-        <div className="dose-table" role="table" aria-label="Medicine timings">
+        <div className="dose-table" role="table" aria-label={t("medicineTimings")}>
           <div className="dose-row dose-head" role="row">
-            <span>Medicine</span>
+            <span>{t("medicine")}</span>
             {TIMINGS.map(([k, label]) => (
-              <span key={k} className="dose-slot-head" title={label}>
+              <span key={k} className="dose-slot-head" title={t(label)}>
                 <i aria-hidden="true">{TIMING_HEAD[k][0]}</i>
-                {TIMING_HEAD[k][1]}
+                {t(TIMING_HEAD[k][1])}
               </span>
             ))}
           </div>
@@ -193,23 +199,23 @@ export function CareChart({ items, onEnd, empty = "Nothing on the chart." }) {
               <div className="dose-name">
                 <b>{m.name}</b>
                 <small>
-                  {[m.dose, FOOD[m.food], m.quantity && `Qty ${m.quantity}`].filter(Boolean).join(" · ")}
-                  {m.days_left !== null && m.days_left !== undefined ? ` · ${m.days_left} day${m.days_left === 1 ? "" : "s"} left` : m.duration_days ? "" : " · until stopped"}
+                  {[m.dose, FOOD[m.food] && t(FOOD[m.food]), m.quantity && `${t("qty")} ${m.quantity}`].filter(Boolean).join(" · ")}
+                  {m.days_left !== null && m.days_left !== undefined ? ` · ${m.days_left} ${t("daysLeft")}` : m.duration_days ? "" : ` · ${t("untilStopped")}`}
                 </small>
                 {m.instructions && <small>{m.instructions}</small>}
                 {onEnd && (
                   <span className="care-actions">
                     <button className="link-btn" onClick={() => onEnd(m, "COMPLETED")}>
-                      ✓ Course done
+                      ✓ {t("courseDone")}
                     </button>
                     <button className="link-btn danger-link" onClick={() => onEnd(m, "STOPPED")}>
-                      Stop
+                      {t("stop")}
                     </button>
                   </span>
                 )}
               </div>
               {TIMINGS.map(([k, label]) => (
-                <span key={k} className={`dose-cell ${m.timings.includes(k) ? "on" : ""}`} aria-label={`${label}: ${m.timings.includes(k) ? "yes" : "no"}`}>
+                <span key={k} className={`dose-cell ${m.timings.includes(k) ? "on" : ""}`} aria-label={`${t(label)}: ${m.timings.includes(k) ? "✓" : "—"}`}>
                   {m.timings.includes(k) ? "●" : ""}
                 </span>
               ))}
@@ -221,13 +227,13 @@ export function CareChart({ items, onEnd, empty = "Nothing on the chart." }) {
         <ul className="practice-list">
           {practices.map((p) => (
             <li key={p.id}>
-              <span className="chip">{pretty(p.category)}</span>
+              <span className="chip">{t(`cat_${p.category}`)}</span>
               <b>{p.name}</b>
-              {p.timings.length > 0 && <small> · {p.timings.map((x) => pretty(x)).join(", ")}</small>}
+              {p.timings.length > 0 && <small> · {p.timings.map((x) => t(`tm_${x}`)).join(", ")}</small>}
               {p.instructions && <small> — {p.instructions}</small>}
               {onEnd && (
                 <button className="link-btn" onClick={() => onEnd(p, "COMPLETED")}>
-                  ✓ Done
+                  ✓ {t("done")}
                 </button>
               )}
             </li>
@@ -252,14 +258,15 @@ const itemBody = (it) => ({
 });
 
 function CareItemFields({ item, setItem, onRemove }) {
+  const { t } = useLanguage();
   const toggle = (k) => setItem({ ...item, timings: item.timings.includes(k) ? item.timings.filter((x) => x !== k) : [...item.timings, k] });
   const med = item.kind === "MEDICINE";
   return (
     <div className="care-item-form">
-      <div className="segmented" role="group" aria-label="Type">
+      <div className="segmented" role="group" aria-label={t("hospitalType")}>
         {[
-          ["MEDICINE", "💊 Medicine"],
-          ["PRACTICE", "✔ Practice / advice"],
+          ["MEDICINE", `💊 ${t("medicine")}`],
+          ["PRACTICE", `✔ ${t("practiceAdvice")}`],
         ].map(([k, l]) => (
           <button key={k} type="button" className={item.kind === k ? "seg active" : "seg"} onClick={() => setItem({ ...item, kind: k })}>
             {l}
@@ -267,56 +274,56 @@ function CareItemFields({ item, setItem, onRemove }) {
         ))}
         {onRemove && (
           <button type="button" className="link-btn danger-link" onClick={onRemove}>
-            Remove
+            {t("remove")}
           </button>
         )}
       </div>
       <div className="form-grid">
-        <Field label={med ? "Medicine name *" : "What to do *"} full>
-          <input value={item.name} onChange={(e) => setItem({ ...item, name: e.target.value })} placeholder={med ? "e.g. Iron Folic Acid" : "e.g. Rest, no heavy lifting"} />
+        <Field label={med ? `${t("medicineName")} *` : `${t("whatToDo")} *`} full>
+          <input value={item.name} onChange={(e) => setItem({ ...item, name: e.target.value })} placeholder={med ? "Iron Folic Acid" : t("whatToDoPlaceholder")} />
         </Field>
-        <Field label="Category">
+        <Field label={t("category")}>
           <select value={item.category} onChange={(e) => setItem({ ...item, category: e.target.value })}>
             {CATEGORIES.map(([k, l]) => (
               <option key={k} value={k}>
-                {l}
+                {t(l)}
               </option>
             ))}
           </select>
         </Field>
         {med && (
           <>
-            <Field label="Dose">
-              <input value={item.dose} onChange={(e) => setItem({ ...item, dose: e.target.value })} placeholder="e.g. 1 tablet / 5 ml" />
+            <Field label={t("dose")}>
+              <input value={item.dose} onChange={(e) => setItem({ ...item, dose: e.target.value })} placeholder={t("dosePlaceholder")} />
             </Field>
-            <Field label="Quantity">
-              <input value={item.quantity} onChange={(e) => setItem({ ...item, quantity: e.target.value })} placeholder="e.g. 30 tablets" />
+            <Field label={t("quantity")}>
+              <input value={item.quantity} onChange={(e) => setItem({ ...item, quantity: e.target.value })} placeholder={t("quantityPlaceholder")} />
             </Field>
-            <Field label="Food">
+            <Field label={t("food")}>
               <select value={item.food} onChange={(e) => setItem({ ...item, food: e.target.value })}>
-                <option value="ANY">Any time</option>
-                <option value="BEFORE">Before food</option>
-                <option value="AFTER">After food</option>
-                <option value="WITH">With food</option>
+                <option value="ANY">{t("food_ANY")}</option>
+                <option value="BEFORE">{t("food_BEFORE")}</option>
+                <option value="AFTER">{t("food_AFTER")}</option>
+                <option value="WITH">{t("food_WITH")}</option>
               </select>
             </Field>
           </>
         )}
-        <Field label="Course (days)">
-          <input inputMode="numeric" value={item.duration_days} onChange={(e) => setItem({ ...item, duration_days: e.target.value.replace(/\D/g, "").slice(0, 4) })} placeholder="empty = until stopped" />
+        <Field label={t("courseDays")}>
+          <input inputMode="numeric" value={item.duration_days} onChange={(e) => setItem({ ...item, duration_days: e.target.value.replace(/\D/g, "").slice(0, 4) })} placeholder={t("emptyUntilStopped")} />
         </Field>
         <div className="field full">
-          <span>Times of day</span>
+          <span>{t("timesOfDay")}</span>
           <div className="timing-picks">
             {TIMINGS.map(([k, l]) => (
               <button key={k} type="button" className={item.timings.includes(k) ? "chip-btn on" : "chip-btn"} onClick={() => toggle(k)}>
-                {l}
+                {t(l)}
               </button>
             ))}
           </div>
         </div>
-        <Field label="Notes" full>
-          <input value={item.instructions} onChange={(e) => setItem({ ...item, instructions: e.target.value })} placeholder="optional" />
+        <Field label={t("notes")} full>
+          <input value={item.instructions} onChange={(e) => setItem({ ...item, instructions: e.target.value })} placeholder={t("optional")} />
         </Field>
       </div>
     </div>
@@ -326,6 +333,7 @@ function CareItemFields({ item, setItem, onRemove }) {
 // ---------- forms used on the record ----------
 
 function CareItemForm({ patientId, onSaved, onCancel, toast }) {
+  const { t } = useLanguage();
   const [item, setItem] = useState(EMPTY_ITEM);
   const [busy, setBusy] = useState(false);
   const save = async () => {
@@ -333,10 +341,10 @@ function CareItemForm({ patientId, onSaved, onCancel, toast }) {
     setBusy(true);
     try {
       await api.post(`/patients/${patientId}/care-items`, itemBody(item));
-      toast("Added to the care chart");
+      toast(t("addedToChart"));
       onSaved();
     } catch (e) {
-      toast(fieldErrors(e));
+      toast(fieldErrors(e, t));
     } finally {
       setBusy(false);
     }
@@ -346,10 +354,10 @@ function CareItemForm({ patientId, onSaved, onCancel, toast }) {
       <CareItemFields item={item} setItem={setItem} />
       <div className="action-row">
         <button className="primary-btn" disabled={!item.name.trim() || busy} onClick={save}>
-          Add to chart
+          {t("addToChart")}
         </button>
         <button className="link-btn" onClick={onCancel}>
-          Cancel
+          {t("cancel")}
         </button>
       </div>
     </div>
@@ -357,6 +365,7 @@ function CareItemForm({ patientId, onSaved, onCancel, toast }) {
 }
 
 function PrescriptionForm({ patientId, referrals, onSaved, onCancel, toast }) {
+  const { t } = useLanguage();
   const [rx, setRx] = useState({ doctor_name: "", facility_name: "", prescribed_on: new Date().toISOString().slice(0, 10), diagnosis: "", notes: "", referral_id: "" });
   const [items, setItems] = useState([{ ...EMPTY_ITEM, timings: ["MORNING"] }]);
   const [photo, setPhoto] = useState(null);
@@ -375,28 +384,28 @@ function PrescriptionForm({ patientId, referrals, onSaved, onCancel, toast }) {
         items: items.filter((i) => i.name.trim()).map(itemBody),
       });
       if (photo) await uploadPhoto(photo, "prescription", saved.id);
-      toast("Prescription saved · medicines added to the chart");
+      toast(t("rxSaved"));
       onSaved();
     } catch (e) {
-      toast(fieldErrors(e));
+      toast(fieldErrors(e, t));
     } finally {
       setBusy(false);
     }
   };
   return (
     <div className="sub-form reveal">
-      <p className="muted">Copy the doctor's paper prescription. A photo of the paper is kept with it.</p>
+      <p className="muted">{t("rxHelp")}</p>
       <div className="form-grid">
-        <Field label="Doctor">
+        <Field label={t("doctor")}>
           <input value={rx.doctor_name} onChange={(e) => setRx({ ...rx, doctor_name: e.target.value })} placeholder="Dr. …" />
         </Field>
-        <Field label="Hospital / clinic">
+        <Field label={t("hospitalClinic")}>
           <input value={rx.facility_name} onChange={(e) => setRx({ ...rx, facility_name: e.target.value })} />
         </Field>
-        <Field label="Date">
+        <Field label={t("date")}>
           <input type="date" value={rx.prescribed_on} onChange={(e) => setRx({ ...rx, prescribed_on: e.target.value })} />
         </Field>
-        <Field label="For referral">
+        <Field label={t("forReferral")}>
           <select value={rx.referral_id} onChange={(e) => setRx({ ...rx, referral_id: e.target.value })}>
             <option value="">—</option>
             {referrals.map((r) => (
@@ -406,30 +415,30 @@ function PrescriptionForm({ patientId, referrals, onSaved, onCancel, toast }) {
             ))}
           </select>
         </Field>
-        <Field label="Diagnosis" full>
-          <input value={rx.diagnosis} onChange={(e) => setRx({ ...rx, diagnosis: e.target.value })} placeholder="as written by the doctor" />
+        <Field label={t("diagnosis")} full>
+          <input value={rx.diagnosis} onChange={(e) => setRx({ ...rx, diagnosis: e.target.value })} placeholder={t("asWrittenByDoctor")} />
         </Field>
-        <Field label="Other notes" full>
-          <textarea value={rx.notes} onChange={(e) => setRx({ ...rx, notes: e.target.value })} placeholder="tests, advice, next visit…" />
+        <Field label={t("otherNotes")} full>
+          <textarea value={rx.notes} onChange={(e) => setRx({ ...rx, notes: e.target.value })} placeholder={t("otherNotesPlaceholder")} />
         </Field>
       </div>
-      <h4 className="sub-title">Medicines and advice</h4>
+      <h4 className="sub-title">{t("medicinesAdvice")}</h4>
       {items.map((it, i) => (
         <CareItemFields key={i} item={it} setItem={(x) => setItems(items.map((y, j) => (j === i ? x : y)))} onRemove={items.length > 1 ? () => setItems(items.filter((_, j) => j !== i)) : null} />
       ))}
       <button className="secondary-btn" onClick={() => setItems([...items, { ...EMPTY_ITEM }])}>
-        ＋ Another medicine / advice
+        ＋ {t("anotherMedicine")}
       </button>
       <div className="photo-line">
-        <PhotoPicker label={photo ? "Retake photo" : "Photo of the prescription"} onFile={setPhoto} busy={busy} />
-        {photo && <span className="chip bed-held">✓ Photo ready</span>}
+        <PhotoPicker label={photo ? t("retake") : t("rxPhoto")} onFile={setPhoto} busy={busy} />
+        {photo && <span className="chip bed-held">✓ {t("photoReady")}</span>}
       </div>
       <div className="action-row">
         <button className="primary-btn" disabled={busy} onClick={save}>
-          {busy ? "Saving…" : "Save prescription"}
+          {busy ? t("saving") : t("saveRx")}
         </button>
         <button className="link-btn" onClick={onCancel}>
-          Cancel
+          {t("cancel")}
         </button>
       </div>
     </div>
@@ -437,6 +446,7 @@ function PrescriptionForm({ patientId, referrals, onSaved, onCancel, toast }) {
 }
 
 function VitalsForm({ patientId, kind, referralId, onSaved, onCancel, toast, reasonDefault }) {
+  const { t } = useLanguage();
   const ranges = useVitalRanges();
   const [values, setValues] = useState({});
   const [reason, setReason] = useState(reasonDefault);
@@ -444,7 +454,7 @@ function VitalsForm({ patientId, kind, referralId, onSaved, onCancel, toast, rea
   const save = async () => {
     if (busy) return;
     const vitals = vitalsBody(values);
-    if (kind === "VITALS_UPDATE" && !Object.keys(vitals).length) return toast("Enter at least one reading.");
+    if (kind === "VITALS_UPDATE" && !Object.keys(vitals).length) return toast(t("enterOneReading"));
     setBusy(true);
     try {
       const enc = await api.post(`/patients/${patientId}/encounters`, {
@@ -453,26 +463,26 @@ function VitalsForm({ patientId, kind, referralId, onSaved, onCancel, toast, rea
         referral_id: referralId || null,
         vitals,
       });
-      toast(enc.triage_suggestion || (kind === "HOME_VISIT" ? "Visit recorded" : "Readings saved"));
+      toast(enc.triage_suggestion || (kind === "HOME_VISIT" ? t("visitRecorded") : t("readingsSaved")));
       onSaved();
     } catch (e) {
-      toast(fieldErrors(e));
+      toast(fieldErrors(e, t));
     } finally {
       setBusy(false);
     }
   };
   return (
     <div className="sub-form reveal">
-      <Field label={kind === "HOME_VISIT" ? "How is the patient?" : "Note"} full>
+      <Field label={kind === "HOME_VISIT" ? t("howIsPatient") : t("note")} full>
         <input value={reason} onChange={(e) => setReason(e.target.value)} />
       </Field>
       <VitalsGrid values={values} onChange={setValues} ranges={ranges} />
       <div className="action-row">
         <button className="primary-btn" disabled={busy} onClick={save}>
-          {kind === "HOME_VISIT" ? "Save visit" : "Save readings"}
+          {kind === "HOME_VISIT" ? t("saveVisit") : t("saveReadings")}
         </button>
         <button className="link-btn" onClick={onCancel}>
-          Cancel
+          {t("cancel")}
         </button>
       </div>
     </div>
@@ -480,20 +490,21 @@ function VitalsForm({ patientId, kind, referralId, onSaved, onCancel, toast, rea
 }
 
 export function DeathForm({ patient, onDone, onCancel, toast }) {
+  const { t } = useLanguage();
   const now = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
   const [cause, setCause] = useState("");
   const [at, setAt] = useState(now);
   const [busy, setBusy] = useState(false);
   const save = async () => {
     if (cause.trim().length < 2 || !at || busy) return;
-    if (!window.confirm(`Record the death of ${patient.name}? Every open referral will be stopped.`)) return;
+    if (!window.confirm(`${patient.name}: ${t("confirmDeath")}`)) return;
     setBusy(true);
     try {
       await api.post(`/patients/${patient.id}/deceased`, { cause: cause.trim(), died_at: new Date(at).toISOString() });
-      toast("Recorded. The referral is stopped and the bed and ambulance released.");
+      toast(t("deathRecorded"));
       onDone();
     } catch (e) {
-      toast(fieldErrors(e));
+      toast(fieldErrors(e, t));
     } finally {
       setBusy(false);
     }
@@ -501,22 +512,22 @@ export function DeathForm({ patient, onDone, onCancel, toast }) {
   return (
     <div className="sub-form death-form reveal">
       <p>
-        <b>Patient died — stop the referral</b>
+        <b>{t("deathTitle")}</b>
       </p>
       <div className="form-grid">
-        <Field label="Cause of death *" full>
-          <input value={cause} onChange={(e) => setCause(e.target.value)} placeholder="as told by the doctor / family" />
+        <Field label={`${t("causeOfDeath")} *`} full>
+          <input value={cause} onChange={(e) => setCause(e.target.value)} placeholder={t("asToldBy")} />
         </Field>
-        <Field label="Time of death *">
+        <Field label={`${t("timeOfDeath")} *`}>
           <input type="datetime-local" value={at} max={now} onChange={(e) => setAt(e.target.value)} />
         </Field>
       </div>
       <div className="action-row">
         <button className="danger-btn" disabled={busy || cause.trim().length < 2} onClick={save}>
-          Stop referral · record death
+          {t("stopRecordDeath")}
         </button>
         <button className="link-btn" onClick={onCancel}>
-          Cancel
+          {t("cancel")}
         </button>
       </div>
     </div>
@@ -524,6 +535,7 @@ export function DeathForm({ patient, onDone, onCancel, toast }) {
 }
 
 function ConditionList({ conditions, canEdit, patientId, onChange, toast }) {
+  const { t } = useLanguage();
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
   const [status, setStatus] = useState("ACTIVE");
@@ -535,32 +547,32 @@ function ConditionList({ conditions, canEdit, patientId, onChange, toast }) {
       setAdding(false);
       onChange();
     } catch (e) {
-      toast(e.message);
+      toast(errorText(t, e));
     }
   };
   const update = async (c, next) => {
-    const note = next === "RESOLVED" ? window.prompt("Note (optional), e.g. 'cured, ultrasound normal'") : "";
+    const note = next === "RESOLVED" ? window.prompt(t("curedNotePrompt")) : "";
     if (note === null) return;
     try {
       await api.patch(`/conditions/${c.id}`, { status: next, note: note || null });
       onChange();
     } catch (e) {
-      toast(e.message);
+      toast(errorText(t, e));
     }
   };
   return (
     <div>
-      {conditions.length === 0 && <p className="muted">No illnesses recorded yet.</p>}
+      {conditions.length === 0 && <p className="muted">{t("noIllnesses")}</p>}
       <ul className="condition-list">
         {conditions.map((c) => (
           <li key={c.id} className={`cond cond-${c.status.toLowerCase()}`}>
             <div>
-              <b>{c.name}</b> <span className="chip">{c.status === "RESOLVED" ? "Cured / resolved" : pretty(c.status)}</span>
+              <b>{c.name}</b> <span className="chip">{t(`cond_${c.status}`)}</span>
               <small className="cond-trail">
                 {c.history.map((h, i) => (
                   <span key={i}>
                     {i > 0 && " → "}
-                    {h.status === "RESOLVED" ? "cured" : h.status.toLowerCase()} ({day(h.at)}){h.note ? `: ${h.note}` : ""}
+                    {t(`cond_${h.status}`)} ({day(h.at)}){h.note ? `: ${h.note}` : ""}
                   </span>
                 ))}
               </small>
@@ -569,17 +581,17 @@ function ConditionList({ conditions, canEdit, patientId, onChange, toast }) {
               <span className="care-actions">
                 {c.status !== "RESOLVED" && (
                   <button className="link-btn" onClick={() => update(c, "RESOLVED")}>
-                    Mark cured
+                    {t("markCured")}
                   </button>
                 )}
                 {c.status === "RESOLVED" && (
                   <button className="link-btn" onClick={() => update(c, "ACTIVE")}>
-                    Came back
+                    {t("cameBack")}
                   </button>
                 )}
                 {c.status === "ACTIVE" && (
                   <button className="link-btn" onClick={() => update(c, "CHRONIC")}>
-                    Long-term
+                    {t("cond_CHRONIC")}
                   </button>
                 )}
               </span>
@@ -590,22 +602,22 @@ function ConditionList({ conditions, canEdit, patientId, onChange, toast }) {
       {canEdit &&
         (adding ? (
           <div className="inline-form">
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Fatty liver, Diabetes, Anaemia" />
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder={t("illnessPlaceholder")} />
             <select value={status} onChange={(e) => setStatus(e.target.value)}>
-              <option value="ACTIVE">Current</option>
-              <option value="CHRONIC">Long-term</option>
-              <option value="RESOLVED">Had it before (cured)</option>
+              <option value="ACTIVE">{t("cond_ACTIVE")}</option>
+              <option value="CHRONIC">{t("cond_CHRONIC")}</option>
+              <option value="RESOLVED">{t("hadBefore")}</option>
             </select>
             <button className="primary-btn" onClick={add} disabled={!name.trim()}>
-              Add
+              {t("add")}
             </button>
             <button className="link-btn" onClick={() => setAdding(false)}>
-              Cancel
+              {t("cancel")}
             </button>
           </div>
         ) : (
           <button className="secondary-btn" onClick={() => setAdding(true)}>
-            ＋ Add illness / condition
+            ＋ {t("addIllness")}
           </button>
         ))}
     </div>
@@ -613,6 +625,7 @@ function ConditionList({ conditions, canEdit, patientId, onChange, toast }) {
 }
 
 function PatientDetailsForm({ patient, onSaved, onCancel, toast }) {
+  const { t } = useLanguage();
   const [f, setF] = useState({
     phone: patient.phone,
     email: patient.email || "",
@@ -629,25 +642,25 @@ function PatientDetailsForm({ patient, onSaved, onCancel, toast }) {
         language: f.language,
         reminders: f.reminders,
       });
-      toast("Details saved");
+      toast(t("detailsSaved"));
       onSaved();
     } catch (e) {
-      toast(fieldErrors(e));
+      toast(fieldErrors(e, t));
     }
   };
   return (
     <div className="sub-form reveal">
       <div className="form-grid">
-        <Field label="Phone">
+        <Field label={t("phone")}>
           <input inputMode="tel" value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value.replace(/\D/g, "").slice(0, 10) })} />
         </Field>
-        <Field label="Email (for reminders, optional)">
+        <Field label={t("emailReminders")}>
           <input type="email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} />
         </Field>
-        <Field label="Village / address" full>
-          <input value={f.address} onChange={(e) => setF({ ...f, address: e.target.value })} placeholder="para, landmark — also used as ambulance pickup" />
+        <Field label={t("villageAddress")} full>
+          <input value={f.address} onChange={(e) => setF({ ...f, address: e.target.value })} placeholder={t("addressPlaceholderLong")} />
         </Field>
-        <Field label="Language for messages">
+        <Field label={t("messageLanguage")}>
           <select value={f.language} onChange={(e) => setF({ ...f, language: e.target.value })}>
             {LANGS.map(([k, l]) => (
               <option key={k} value={k}>
@@ -658,15 +671,15 @@ function PatientDetailsForm({ patient, onSaved, onCancel, toast }) {
         </Field>
         <label className="field check-field">
           <input type="checkbox" checked={f.reminders} onChange={(e) => setF({ ...f, reminders: e.target.checked })} />
-          <span>Send medicine reminders at dose times</span>
+          <span>{t("sendReminders")}</span>
         </label>
       </div>
       <div className="action-row">
         <button className="primary-btn" onClick={save}>
-          Save
+          {t("save")}
         </button>
         <button className="link-btn" onClick={onCancel}>
-          Cancel
+          {t("cancel")}
         </button>
       </div>
     </div>
@@ -676,14 +689,15 @@ function PatientDetailsForm({ patient, onSaved, onCancel, toast }) {
 // ---------- the whole record ----------
 
 const TABS = [
-  ["care", "Medicines & care"],
-  ["history", "History"],
-  ["vitals", "Vitals"],
-  ["referrals", "Referrals"],
+  ["care", "tab_care"],
+  ["history", "tab_history"],
+  ["vitals", "tab_vitals"],
+  ["referrals", "tab_referrals"],
 ];
 
 /** role: WORKER | DOCTOR | FACILITY_STAFF | COORDINATOR | PATIENT */
 export function PatientRecordView({ record, role, reload, toast, onReferral, onClose, referralId }) {
+  const { t } = useLanguage();
   const ranges = useVitalRanges();
   const [tab, setTab] = useState("care");
   const [open, setOpen] = useState(""); // which form is open
@@ -699,24 +713,23 @@ export function PatientRecordView({ record, role, reload, toast, onReferral, onC
     reload();
   };
   const endCare = async (item, status) => {
-    const label = status === "COMPLETED" ? "course done" : "stopped";
-    if (!window.confirm(`Mark "${item.name}" as ${label}? It leaves the chart and stays in the history.`)) return;
+    if (!window.confirm(`${item.name}: ${status === "COMPLETED" ? t("confirmCourseDone") : t("confirmStop")}`)) return;
     try {
       await api.post(`/care-items/${item.id}/end`, { status });
-      toast(status === "COMPLETED" ? "Course completed" : "Stopped");
+      toast(status === "COMPLETED" ? t("courseDone") : t("stopped"));
       reload();
     } catch (e) {
-      toast(e.message);
+      toast(errorText(t, e));
     }
   };
   const addPhoto = async (file) => {
     setBusy(true);
     try {
       await uploadPhoto(file, "patient", p.id);
-      toast("Photo saved");
+      toast(t("photoSaved"));
       reload();
     } catch (e) {
-      toast(e.message);
+      toast(errorText(t, e));
     } finally {
       setBusy(false);
     }
@@ -727,21 +740,21 @@ export function PatientRecordView({ record, role, reload, toast, onReferral, onC
         <PhotoView id={p.photo_id} asPatient={asPatient} alt={p.name} className="photo-face" />
         <div className="record-id">
           <h3>
-            {p.name} {!alive && <span className="chip deceased-chip">Died {day(p.deceased_at)}</span>}
+            {p.name} {!alive && <span className="chip deceased-chip">{t("died")} {day(p.deceased_at)}</span>}
           </h3>
           <p className="muted">
-            {p.age} y{p.sex ? ` · ${p.sex}` : ""} · 📞 {p.phone}
+            {p.age} {t("yearsShort")}{p.sex ? ` · ${t(`sex_${p.sex}`)}` : ""} · 📞 {p.phone}
             {p.address ? ` · ${p.address}` : ""}
           </p>
           <p className="health-id">
-            Health ID <b>{p.health_id}</b>
-            {asha && <small> — give this to the patient for the "My health" page</small>}
+            {t("healthId")} <b>{p.health_id}</b>
+            {asha && <small> — {t("giveHealthId")}</small>}
           </p>
-          {record.asha_name && !asha && <p className="muted">ASHA: {record.asha_name}</p>}
-          {!alive && <p className="death-note">Cause: {p.death_cause}</p>}
+          {record.asha_name && !asha && <p className="muted">{t("roleAsha")}: {record.asha_name}</p>}
+          {!alive && <p className="death-note">{t("cause")}: {p.death_cause}</p>}
         </div>
         {onClose && (
-          <button className="consult-close" onClick={onClose} aria-label="Close">
+          <button className="consult-close" onClick={onClose} aria-label={t("close")}>
             ×
           </button>
         )}
@@ -752,21 +765,21 @@ export function PatientRecordView({ record, role, reload, toast, onReferral, onC
           {asha && (
             <>
               <button className="primary-btn" onClick={() => onReferral?.(p)}>
-                ➜ Make referral
+                ➜ {t("makeReferral")}
               </button>
               <button className="secondary-btn" onClick={() => setOpen(open === "visit" ? "" : "visit")}>
-                🏠 Home visit
+                🏠 {t("homeVisit")}
               </button>
               <button className="secondary-btn" onClick={() => setOpen(open === "rx" ? "" : "rx")}>
-                📝 Prescription
+                📝 {t("prescription")}
               </button>
               <button className="secondary-btn" onClick={() => setOpen(open === "care" ? "" : "care")}>
-                💊 Add medicine / practice
+                💊 {t("addMedicinePractice")}
               </button>
             </>
           )}
           <button className="secondary-btn" onClick={() => setOpen(open === "vitals" ? "" : "vitals")}>
-            ♥ New readings
+            ♥ {t("newReadings")}
           </button>
         </div>
       )}
@@ -775,19 +788,19 @@ export function PatientRecordView({ record, role, reload, toast, onReferral, onC
           {asha && (
             <>
               <button className="link-btn" onClick={() => setOpen(open === "details" ? "" : "details")}>
-                ✎ Edit details
+                ✎ {t("editDetails")}
               </button>
-              <PhotoPicker label={p.photo_id ? "New photo" : "Add photo"} onFile={addPhoto} busy={busy} />
+              <PhotoPicker label={p.photo_id ? t("newPhoto") : t("addPhoto")} onFile={addPhoto} busy={busy} />
             </>
           )}
           <button className="link-btn danger-link" onClick={() => setOpen(open === "death" ? "" : "death")}>
-            ✝ Patient died
+            ✝ {t("patientDied")}
           </button>
         </div>
       )}
-      {open === "visit" && <VitalsForm patientId={p.id} kind="HOME_VISIT" reasonDefault="Routine visit — all OK" onSaved={done} onCancel={() => setOpen("")} toast={toast} />}
+      {open === "visit" && <VitalsForm patientId={p.id} kind="HOME_VISIT" reasonDefault={t("routineVisitOk")} onSaved={done} onCancel={() => setOpen("")} toast={toast} />}
       {open === "vitals" && (
-        <VitalsForm patientId={p.id} kind="VITALS_UPDATE" referralId={referralId} reasonDefault={hospital ? "After checkup" : "New readings"} onSaved={done} onCancel={() => setOpen("")} toast={toast} />
+        <VitalsForm patientId={p.id} kind="VITALS_UPDATE" referralId={referralId} reasonDefault={hospital ? t("afterCheckup") : t("newReadings")} onSaved={done} onCancel={() => setOpen("")} toast={toast} />
       )}
       {open === "rx" && <PrescriptionForm patientId={p.id} referrals={record.referrals} onSaved={done} onCancel={() => setOpen("")} toast={toast} />}
       {open === "care" && <CareItemForm patientId={p.id} onSaved={done} onCancel={() => setOpen("")} toast={toast} />}
@@ -796,7 +809,7 @@ export function PatientRecordView({ record, role, reload, toast, onReferral, onC
 
       {latest && (
         <div className="latest-vitals">
-          <p className="eyebrow">Latest readings · {when(latest.created_at)}</p>
+          <p className="eyebrow">{t("latestReadings")} · {when(latest.created_at)}</p>
           <VitalsReadout vitals={latest.vitals} flags={latest.flags} ranges={ranges} />
         </div>
       )}
@@ -804,21 +817,21 @@ export function PatientRecordView({ record, role, reload, toast, onReferral, onC
       <div className="tabs" role="tablist">
         {TABS.map(([k, l]) => (
           <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? "tab active" : "tab"} onClick={() => setTab(k)}>
-            {l}
+            {t(l)}
           </button>
         ))}
       </div>
 
       {tab === "care" && (
         <div className="tab-body">
-          <CareChart items={record.care_chart} onEnd={asha && alive ? endCare : null} empty="No medicines or advice on the chart right now." />
+          <CareChart items={record.care_chart} onEnd={asha && alive ? endCare : null} empty={t("chartEmptyNow")} />
           {record.finished_care.length > 0 && (
             <details className="finished">
-              <summary>Finished ({record.finished_care.length})</summary>
+              <summary>{t("finished")} ({record.finished_care.length})</summary>
               <ul>
                 {record.finished_care.map((i) => (
                   <li key={i.id}>
-                    {i.name} — {i.end_reason?.toLowerCase()} {day(i.ended_at)}
+                    {i.name} — {i.end_reason ? said(t, "end_", i.end_reason) : ""} {day(i.ended_at)}
                   </li>
                 ))}
               </ul>
@@ -828,34 +841,34 @@ export function PatientRecordView({ record, role, reload, toast, onReferral, onC
       )}
       {tab === "history" && (
         <div className="tab-body">
-          <h4 className="sub-title">Illnesses and conditions</h4>
+          <h4 className="sub-title">{t("illnessesTitle")}</h4>
           <ConditionList conditions={record.conditions} canEdit={(asha || role === "DOCTOR") && alive} patientId={p.id} onChange={reload} toast={toast} />
-          <h4 className="sub-title">Prescriptions</h4>
-          {record.prescriptions.length === 0 && <p className="muted">No prescriptions entered yet.</p>}
+          <h4 className="sub-title">{t("prescriptions")}</h4>
+          {record.prescriptions.length === 0 && <p className="muted">{t("noPrescriptions")}</p>}
           {record.prescriptions.map((rx) => (
             <div className="rx-card" key={rx.id}>
               <div>
-                <b>{day(rx.prescribed_on)}</b> · {rx.doctor_name || "Doctor"}
+                <b>{day(rx.prescribed_on)}</b> · {rx.doctor_name || t("doctor")}
                 {rx.facility_name ? ` · ${rx.facility_name}` : ""}
-                {rx.diagnosis && <p>Diagnosis: {rx.diagnosis}</p>}
+                {rx.diagnosis && <p>{t("diagnosis")}: {rx.diagnosis}</p>}
                 {rx.notes && <p className="muted">{rx.notes}</p>}
                 {rx.items.length > 0 && <p className="muted">{rx.items.map((i) => i.name).join(", ")}</p>}
               </div>
-              {rx.photo_id && <PhotoView id={rx.photo_id} asPatient={asPatient} alt="Prescription" className="photo-rx" />}
+              {rx.photo_id && <PhotoView id={rx.photo_id} asPatient={asPatient} alt={t("prescription")} className="photo-rx" />}
             </div>
           ))}
         </div>
       )}
       {tab === "vitals" && (
         <div className="tab-body">
-          {record.vitals_history.filter((e) => Object.values(e.vitals).some((x) => x !== null)).length === 0 && <p className="muted">No readings yet.</p>}
+          {record.vitals_history.filter((e) => Object.values(e.vitals).some((x) => x !== null)).length === 0 && <p className="muted">{t("noReadingsYet")}</p>}
           {record.vitals_history
             .filter((e) => Object.values(e.vitals).some((x) => x !== null))
             .map((e) => (
               <div className="vitals-entry" key={e.id}>
                 <p className="muted">
-                  {when(e.created_at)} · {pretty(e.kind)}
-                  {e.recorded_by_role ? ` · by ${e.recorded_by_role === "WORKER" ? "ASHA" : pretty(e.recorded_by_role)}` : ""} · {e.reason}
+                  {when(e.created_at)} · {said(t, "kind_", e.kind)}
+                  {e.recorded_by_role ? ` · ${t(`by_${e.recorded_by_role}`)}` : ""} · {e.reason}
                 </p>
                 <VitalsReadout vitals={e.vitals} flags={e.flags} ranges={ranges} />
               </div>
@@ -864,18 +877,18 @@ export function PatientRecordView({ record, role, reload, toast, onReferral, onC
       )}
       {tab === "referrals" && (
         <div className="tab-body">
-          {record.referrals.length === 0 && <p className="muted">No referrals. Visits with "all OK" need none.</p>}
+          {record.referrals.length === 0 && <p className="muted">{t("noReferralsRecord")}</p>}
           {record.referrals.map((r) => (
             <div className="mini-ref" key={r.id}>
               <b>{r.code}</b>
               <span>
-                {r.facility_name} · {r.requested_service}
-                {r.origin === "PATIENT_EMERGENCY" ? " · 🚨 booked by patient" : ""}
+                {r.facility_name} · {said(t, "svc_", (r.requested_service || "").replace(/\W+/g, "_"))}
+                {r.origin === "PATIENT_EMERGENCY" ? ` · 🚨 ${t("bookedByPatientShort")}` : ""}
                 <br />
                 <small>{r.reason}</small>
               </span>
               <small>
-                {pretty(r.status)}
+                {said(t, "st_", r.status)}
                 <br />
                 {day(r.created_at)}
               </small>
@@ -888,12 +901,13 @@ export function PatientRecordView({ record, role, reload, toast, onReferral, onC
 }
 
 export function PatientRecord({ patientId, role, toast, onReferral, onClose, referralId }) {
+  const { t } = useLanguage();
   const [record, setRecord] = useState(null);
   const load = useCallback(() => {
     api
       .get(`/patients/${patientId}/record`)
       .then(setRecord)
-      .catch((e) => toast(e.message));
+      .catch((e) => toast(errorText(t, e)));
   }, [patientId]);
   useEffect(load, [load]);
   if (!record) return <Skeleton />;
@@ -905,6 +919,7 @@ export function PatientRecord({ patientId, role, toast, onReferral, onClose, ref
 const NEW_PATIENT = { name: "", age: "", sex: "F", phone: "", address: "", language: "bn", email: "", consent: false };
 
 export function PatientRegister({ toast, onReferral, selectedId, onSelect }) {
+  const { t } = useLanguage();
   const [rows, setRows] = useState(null);
   const [q, setQ] = useState("");
   const [adding, setAdding] = useState(false);
@@ -915,7 +930,7 @@ export function PatientRegister({ toast, onReferral, selectedId, onSelect }) {
     api
       .get(`/patients/register${q.trim() ? `?q=${encodeURIComponent(q.trim())}` : ""}`)
       .then(setRows)
-      .catch((e) => toast(e.message));
+      .catch((e) => toast(errorText(t, e)));
   }, [q]);
   useEffect(() => {
     const x = setTimeout(load, 250);
@@ -937,14 +952,14 @@ export function PatientRegister({ toast, onReferral, selectedId, onSelect }) {
         consent_given: true,
       });
       if (photo) await uploadPhoto(photo, "patient", p.id);
-      toast(p.possible_duplicate_of ? "Saved. Someone with this name and phone is already on your register." : `Registered · Health ID ${p.health_id}`);
+      toast(p.possible_duplicate_of ? t("savedDuplicateRegister") : `${t("registered")} · ${t("healthId")} ${p.health_id}`);
       setF(NEW_PATIENT);
       setPhoto(null);
       setAdding(false);
       load();
       onSelect(p.id);
     } catch (e) {
-      toast(fieldErrors(e));
+      toast(fieldErrors(e, t));
     } finally {
       setBusy(false);
     }
@@ -953,37 +968,37 @@ export function PatientRegister({ toast, onReferral, selectedId, onSelect }) {
     <section className="panel register-panel">
       <div className="panel-head">
         <div>
-          <p className="eyebrow">My area</p>
-          <h3>My patients</h3>
-          <p className="muted">Everyone you look after. One person = one record; every referral stays under it.</p>
+          <p className="eyebrow">{t("myArea")}</p>
+          <h3>{t("myPatients")}</h3>
+          <p className="muted">{t("registerHelp")}</p>
         </div>
         <button className="primary-btn" onClick={() => setAdding(!adding)}>
-          {adding ? "Close" : "＋ Register"}
+          {adding ? t("close") : `＋ ${t("register")}`}
         </button>
       </div>
       {adding && (
         <div className="sub-form reveal">
           <div className="form-grid">
-            <Field label="Name *">
+            <Field label={`${t("name")} *`}>
               <input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} />
             </Field>
-            <Field label="Age *">
+            <Field label={`${t("age")} *`}>
               <input inputMode="numeric" value={f.age} onChange={(e) => setF({ ...f, age: e.target.value.replace(/\D/g, "").slice(0, 3) })} />
             </Field>
-            <Field label="Sex">
+            <Field label={t("sex")}>
               <select value={f.sex} onChange={(e) => setF({ ...f, sex: e.target.value })}>
-                <option value="F">Female</option>
-                <option value="M">Male</option>
-                <option value="O">Other</option>
+                <option value="F">{t("sex_F")}</option>
+                <option value="M">{t("sex_M")}</option>
+                <option value="O">{t("sex_O")}</option>
               </select>
             </Field>
-            <Field label="Mobile *">
-              <input inputMode="tel" value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value.replace(/\D/g, "").slice(0, 10) })} placeholder="10 digits" />
+            <Field label={`${t("mobile")} *`}>
+              <input inputMode="tel" value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value.replace(/\D/g, "").slice(0, 10) })} placeholder={t("phoneRequired")} />
             </Field>
-            <Field label="Village / address" full>
-              <input value={f.address} onChange={(e) => setF({ ...f, address: e.target.value })} placeholder="para, landmark" />
+            <Field label={t("villageAddress")} full>
+              <input value={f.address} onChange={(e) => setF({ ...f, address: e.target.value })} placeholder={t("addressPlaceholder")} />
             </Field>
-            <Field label="Language for messages">
+            <Field label={t("messageLanguage")}>
               <select value={f.language} onChange={(e) => setF({ ...f, language: e.target.value })}>
                 {LANGS.map(([k, l]) => (
                   <option key={k} value={k}>
@@ -992,30 +1007,30 @@ export function PatientRegister({ toast, onReferral, selectedId, onSelect }) {
                 ))}
               </select>
             </Field>
-            <Field label="Email (optional)">
+            <Field label={t("emailOptional")}>
               <input type="email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} />
             </Field>
             <label className="field full check-field">
               <input type="checkbox" checked={f.consent} onChange={(e) => setF({ ...f, consent: e.target.checked })} />
-              <span>The patient agreed to their details being recorded *</span>
+              <span>{t("consentRecord")} *</span>
             </label>
           </div>
           <div className="photo-line">
-            <PhotoPicker label={photo ? "Retake photo" : "Photo (for identification)"} onFile={setPhoto} busy={busy} />
-            {photo && <span className="chip bed-held">✓ Photo ready</span>}
+            <PhotoPicker label={photo ? t("retake") : t("photoForId")} onFile={setPhoto} busy={busy} />
+            {photo && <span className="chip bed-held">✓ {t("photoReady")}</span>}
           </div>
           <button className="primary-btn" disabled={!valid || busy} onClick={add}>
-            {busy ? "Saving…" : "Save patient"}
+            {busy ? t("saving") : t("savePatient")}
           </button>
         </div>
       )}
       <div className="search-row">
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, phone, Health ID or village" aria-label="Search patients" />
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("searchRegister")} aria-label={t("searchRegister")} />
       </div>
       {rows === null ? (
         <Skeleton />
       ) : rows.length === 0 ? (
-        <Empty title={q ? "No match" : "No patients yet"} text={q ? "Try another spelling or the phone number." : "Register the people you visit."} />
+        <Empty title={q ? t("noMatch") : t("noPatientsYet")} text={q ? t("noMatchSub") : t("noPatientsYetSub")} />
       ) : (
         <div className="register-list">
           {rows.map((r) => (
@@ -1027,12 +1042,12 @@ export function PatientRegister({ toast, onReferral, selectedId, onSelect }) {
                   {r.patient.deceased_at && " †"}
                 </b>
                 <small>
-                  {r.patient.age} y · {r.patient.health_id}
+                  {r.patient.age} {t("yearsShort")} · {r.patient.health_id}
                   {r.patient.address ? ` · ${r.patient.address}` : ""}
                 </small>
               </span>
               <span className="register-side">
-                {r.open_referral_code ? <span className="chip">{r.open_referral_code}</span> : <small>{r.last_visit_at ? `Visited ${day(r.last_visit_at)}` : "Not visited"}</small>}
+                {r.open_referral_code ? <span className="chip">{r.open_referral_code}</span> : <small>{r.last_visit_at ? `${t("visited")} ${day(r.last_visit_at)}` : t("notVisited")}</small>}
                 {r.active_medicines > 0 && <small>💊 {r.active_medicines}</small>}
               </span>
             </button>
@@ -1066,7 +1081,7 @@ export function PatientHealthPortal({ toast }) {
         if (e.status === 401) {
           patientLogout();
           setSignedIn(false);
-        } else toast(e.message);
+        } else toast(errorText(t, e));
       });
   }, []);
   useEffect(() => {
@@ -1079,7 +1094,7 @@ export function PatientHealthPortal({ toast }) {
       await patientLogin(code.trim().toUpperCase(), last4);
       setSignedIn(true);
     } catch (err) {
-      setError(err.message);
+      setError(errorText(t, err));
     }
   };
   if (!signedIn)
@@ -1089,7 +1104,7 @@ export function PatientHealthPortal({ toast }) {
         <h3>{t("myHealthTitle")}</h3>
         <p className="muted">{t("myHealthHelp")}</p>
         <form className="lookup" onSubmit={login}>
-          <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="HID-XXXXXX" autoCapitalize="characters" aria-label="Health ID" />
+          <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="HID-XXXXXX" autoCapitalize="characters" aria-label={t("healthId")} />
           <input value={last4} onChange={(e) => setLast4(e.target.value.replace(/\D/g, "").slice(0, 4))} placeholder={t("phoneLast4")} inputMode="numeric" style={{ maxWidth: 170 }} />
           <button className="primary-btn" type="submit" disabled={!code.trim() || last4.length !== 4}>
             {t("open")}
@@ -1157,7 +1172,7 @@ export function EmergencyPanel({ onClose }) {
       setResult(r);
       setState("done");
     } catch (e) {
-      setError(e.message);
+      setError(errorText(t, e));
       setState("form");
     }
   };
@@ -1165,7 +1180,7 @@ export function EmergencyPanel({ onClose }) {
   return (
     <div className="consult-modal" role="dialog" aria-modal="true">
       <div className="consult-modal-card emergency-card">
-        <button className="consult-close" onClick={onClose} aria-label="Close">
+        <button className="consult-close" onClick={onClose} aria-label={t("close")}>
           ×
         </button>
         <a className="call-108" href="tel:108">
@@ -1205,7 +1220,7 @@ export function EmergencyPanel({ onClose }) {
             <p className="eyebrow">{result.already_open ? t("alreadyBooked") : t("booked")}</p>
             <h3>{result.hospital_name}</h3>
             <p>
-              {result.service} · {t("code")} <b>{result.referral_code}</b>
+              {said(t, "svc_", (result.service || "").replace(/\W+/g, "_"))} · {t("code")} <b>{result.referral_code}</b>
             </p>
             {result.hospital_phone && (
               <a className="secondary-btn" href={`tel:${result.hospital_phone}`}>

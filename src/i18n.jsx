@@ -1,4 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
+import { WORDS_A } from "./lang/words-a.js";
+import { WORDS_B } from "./lang/words-b.js";
 
 export function readLS(k) {
   try {
@@ -567,6 +569,15 @@ export const LOCAL = {
     startConsult: "ପରାମର୍ଶ ଆରମ୍ଭ କରନ୍ତୁ",
   },
 };
+// Fold in the word lists (lang/words-*.js): [English, Bengali, Hindi] per key.
+for (const words of [WORDS_A, WORDS_B]) {
+  for (const [key, [en, bn, hi]] of Object.entries(words)) {
+    if (en !== null) EN[key] = en;
+    if (bn) LOCAL.bn[key] = bn;
+    if (hi) LOCAL.hi[key] = hi;
+  }
+}
+
 const LanguageContext = createContext(null);
 export function LanguageProvider({ children }) {
   const [language, setLanguage] = useState(() => {
@@ -582,6 +593,13 @@ export function LanguageProvider({ children }) {
   return <LanguageContext.Provider value={{ language, setLanguage, t }}>{children}</LanguageContext.Provider>;
 }
 export const useLanguage = () => useContext(LanguageContext);
+// An API error in the person's language when we have words for its code (err_*),
+// otherwise the server's own message.
+export const errorText = (t, e) => {
+  const k = `err_${e?.code}`;
+  const v = t(k);
+  return v === k ? e?.message || String(e) : v;
+};
 export function LanguageSidebar() {
   const { language, setLanguage, t } = useLanguage();
   const [open, setOpen] = useState(false);
