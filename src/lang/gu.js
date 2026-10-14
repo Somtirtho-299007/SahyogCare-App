@@ -246,7 +246,6 @@ export const GU = {
   "tour.replay.t": "ગમે ત્યારે ફરી જુઓ",
   "tour.replay.b": "ફરી જોવા ? દબાવો.",
   patientMobileTitle: "તમારો મોબાઇલ નંબર",
-  patientMobileHelp: "આશા બહેને તમારા માટે લખેલો નંબર. નોંધમાં ઈમેલ હોય તો તે પણ ચાલશે.",
   askAshaForCode: "આશા બહેન પાસે તમારો પ્રવેશ કોડ માંગો",
   askAshaForCodeHow: "તેઓ પોતાના ફોન પર તમારી નોંધ ખોલી “પ્રવેશ કોડ” દબાવશે. 6 અંક અહીં લખો.",
   whoIsSigningIn: "કોણ અંદર આવે છે?",
@@ -589,4 +588,8 @@ export const GU = {
   err_PHONE_LOGIN_OFF: "મોબાઇલથી પ્રવેશ હજી ચાલુ નથી. ઈમેલ વાપરો.",
   err_EMAIL_FAILED: "ઈમેલ ગયો નહીં. એક મિનિટ પછી ફરી પ્રયાસ કરો.",
   err_AUTH_REQUIRED: "કૃપા કરીને ફરી અંદર આવો.",
+  patientMobileHelp: "આશા બહેને તમારા માટે લખેલો 10 અંકનો નંબર.",
+  changeMobile: "મોબાઇલ નંબર બદલો",
+  changeEmailOrMobile: "મોબાઇલ નંબર કે ઈમેલ બદલો",
+  err_SMS_FAILED: "SMS મોકલી શકાયો નહીં. ઈમેલથી અંદર આવો.",
 };

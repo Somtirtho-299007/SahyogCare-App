@@ -246,7 +246,6 @@ export const MR = {
   "tour.replay.t": "कधीही पुन्हा पाहा",
   "tour.replay.b": "हे पुन्हा पाहण्यासाठी ? दाबा.",
   patientMobileTitle: "तुमचा मोबाइल नंबर",
-  patientMobileHelp: "आशा ताईंनी तुमच्यासाठी लिहिलेला नंबर. नोंदीत ईमेल असल्यास तोही चालेल.",
   askAshaForCode: "आशा ताईंकडे तुमचा प्रवेश कोड मागा",
   askAshaForCodeHow: "त्या आपल्या फोनवर तुमची नोंद उघडून “प्रवेश कोड” दाबतील. 6 अंक येथे लिहा.",
   whoIsSigningIn: "कोण आत येत आहे?",
@@ -589,4 +588,8 @@ export const MR = {
   err_PHONE_LOGIN_OFF: "मोबाइलने प्रवेश अजून सुरू नाही. ईमेल वापरा.",
   err_EMAIL_FAILED: "ईमेल गेला नाही. एका मिनिटाने पुन्हा प्रयत्न करा.",
   err_AUTH_REQUIRED: "कृपया पुन्हा आत या.",
+  patientMobileHelp: "आशा ताईंनी तुमच्यासाठी लिहिलेला 10 अंकी नंबर.",
+  changeMobile: "मोबाइल नंबर बदला",
+  changeEmailOrMobile: "मोबाइल नंबर किंवा ईमेल बदला",
+  err_SMS_FAILED: "SMS पाठवता आला नाही. ईमेलने आत या.",
 };

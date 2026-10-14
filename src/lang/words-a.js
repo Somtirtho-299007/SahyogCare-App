@@ -196,7 +196,6 @@ export const WORDS_A = {
 
   // ---------- the patient's own account ----------
   patientMobileTitle: ["Your mobile number", "আপনার মোবাইল নম্বর", "आपका मोबाइल नंबर"],
-  patientMobileHelp: ["The number your ASHA wrote down for you. You can also use the email on your record.", "যে নম্বর আশাদিদি আপনার নামে লিখেছেন। রেকর্ডে ইমেল থাকলে সেটাও চলবে।", "वही नंबर जो आशा दीदी ने आपके नाम लिखा है। रिकॉर्ड में ईमेल हो तो वह भी चलेगा।"],
   askAshaForCode: ["Ask your ASHA for your sign-in code", "আশাদিদির কাছে আপনার ঢোকার কোড চান", "आशा दीदी से अपना लॉग-इन कोड माँगें"],
   askAshaForCodeHow: ["She opens your record on her phone and taps “Sign-in code”. Type the 6 digits here.", "উনি নিজের ফোনে আপনার রেকর্ড খুলে “ঢোকার কোড” টিপবেন। ৬টা সংখ্যা এখানে লিখুন।", "वह अपने फ़ोन पर आपका रिकॉर्ड खोलकर “लॉग-इन कोड” दबाएँगी। 6 अंक यहाँ लिखें।"],
   whoIsSigningIn: ["Who is signing in?", "কে ঢুকছেন?", "कौन लॉग-इन कर रहा है?"],
@@ -218,4 +217,8 @@ export const WORDS_A = {
   "tour.patientSos.b": ["At night, if your ASHA cannot be reached, tap it: the best hospital is booked for you.", "রাতে আশাদিদিকে না পেলে এটা টিপুন: সবচেয়ে ভালো হাসপাতাল বুক হবে।", "रात में आशा दीदी न मिलें तो इसे दबाएँ: सबसे अच्छा अस्पताल बुक होगा।"],
   "tour.patientJourney.t": ["Your referrals", "আপনার রেফারাল", "आपके रेफ़रल"],
   "tour.patientJourney.b": ["Every referral of yours: which hospital, which step, the ambulance. Old ones stay below.", "আপনার সব রেফারাল: কোন হাসপাতাল, কোন ধাপ, অ্যাম্বুলেন্স। পুরোনোগুলো নিচে থাকে।", "आपके सभी रेफ़रल: कौन-सा अस्पताल, कौन-सा कदम, एम्बुलेंस। पुराने नीचे रहते हैं।"],
+  patientMobileHelp: ["The 10-digit number your ASHA wrote down for you.", "যে ১০ সংখ্যার নম্বর আশাদিদি আপনার নামে লিখেছেন।", "वही 10 अंकों का नंबर जो आशा दीदी ने आपके नाम लिखा है।"],
+  changeMobile: ["Change mobile number", "মোবাইল নম্বর বদলান", "मोबाइल नंबर बदलें"],
+  changeEmailOrMobile: ["Change email or mobile number", "মোবাইল নম্বর বা ইমেল বদলান", "मोबाइल नंबर या ईमेल बदलें"],
+  err_SMS_FAILED: ["The SMS could not be sent. Please sign in with your email.", "SMS পাঠানো যায়নি। ইমেল দিয়ে ঢুকুন।", "SMS नहीं जा सका। ईमेल से लॉग-इन करें।"],
 };
