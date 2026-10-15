@@ -22,7 +22,13 @@ SahyogCare has **no public sign-up into a role**. Every ASHA, hospital staff mem
 **Please log in to the Coordinator (District Office) dashboard first, then open the ASHA and Medical Team dashboards.**
 
 1. Open the live site → choose **District office** → enter your email → type the 6-digit code from your inbox (check Spam).
-2. The app asks for your name, the area and the **office passphrase**. Use one of these (case, spaces and dashes don't matter). It is asked **only once**; the coordinator dashboard for that area then opens.     | Area | District office passphrase |    |---|---|    | **Naihati** (start here) | `NAI-FJYC-G2DT-UKH2-CMM3` |    | Nadia | `NAD-62M5-QXB2-95EY-YVJ4` |: choose **Naihati** and enter the passphrase given in our **submission form** (it is kept out of this public repository on purpose). It is asked **only once**; the **Naihati coordinator dashboard** then opens.
+2. The app asks for your name, the area and the **office passphrase**. Use one of these (case, spaces and dashes don't matter). It is asked **only once**; the coordinator dashboard for that area then opens.
+
+   | Area | District office passphrase |
+   |---|---|
+   | **Naihati** (start here) | `NAI-FJYC-G2DT-UKH2-CMM3` |
+   | Nadia | `NAD-62M5-QXB2-95EY-YVJ4` |
+
 3. The first time, the coordinator also sees a **personal code** (8 characters, `XXXX-XXXX`). Write it down: every later login is the email code **plus** this personal code.
 4. In another browser (or a private window), choose **Health worker**, sign in with a **different email**, fill in **Ask to join** (name, area **Naihati**, role **ASHA**, optional photo) and send it.
 5. Back on the coordinator dashboard, press **Approve** under **"Who wants to join"**.
@@ -43,6 +49,7 @@ The full walk-through is in [Complete workflow](#complete-workflow-how-to-test-i
 | ![District office: approve people, watch beds](./screenshots/desktop-coordinator.png) | ![Hospital team on mobile](./screenshots/mobile-medical.jpeg) |
 | ![Referral sent: QR pass and bed held](./screenshots/desktop-asha-referal.png) | ![Patient's own account](./screenshots/mobile-patient.jpeg) |
 | ![Hospital queue with bed panel](./screenshots/desktop-medical.png) | |
+
 ---
 
 ## What It Does
@@ -291,7 +298,7 @@ Use one browser window per person. Each step feeds the next.
 
 ### 7. Coordinator again
 - Dashboard counts match what happened, and late or silent referrals appear as alerts.
-- - Separation check: sign in with another email as a **Nadia** coordinator (passphrase `NAD-62M5-QXB2-95EY-YVJ4`). It sees **none** of the Naihati data, and the Naihati coordinator sees none of Nadia's. sees **none** of the Naihati data.
+- Separation check: sign in with another email as a **Nadia** coordinator (passphrase `NAD-62M5-QXB2-95EY-YVJ4`). It sees **none** of the Naihati data, and the Naihati coordinator sees none of Nadia's.
 
 ```text
 ASHA ──referral + bed hold──► Hospital staff ──accept──► arrival ──► Doctor ──outcome──► Follow-up ──► CLOSED
@@ -404,7 +411,7 @@ What we would architect differently:
 - Run the watchdog and rate limiter outside the web server from day one (a scheduled worker and Redis), so more servers can be added without changes.
 - Design the data model with areas and approval from the start instead of adding them later through migrations.
 
-**Commits:** 90+ commits are visible in the repository history.
+**Commits:** 100+ commits are visible in the repository history.
 
 ---
 
