@@ -22,7 +22,7 @@ SahyogCare has **no public sign-up into a role**. Every ASHA, hospital staff mem
 **Please log in to the Coordinator (District Office) dashboard first, then open the ASHA and Medical Team dashboards.**
 
 1. Open the live site → choose **District office** → enter your email → type the 6-digit code from your inbox (check Spam).
-2. The app asks for your name, the area and the **office passphrase**: choose **Naihati** and enter the passphrase given in our **submission form** (it is kept out of this public repository on purpose). It is asked **only once**; the **Naihati coordinator dashboard** then opens.
+2. The app asks for your name, the area and the **office passphrase**. Use one of these (case, spaces and dashes don't matter). It is asked **only once**; the coordinator dashboard for that area then opens.     | Area | District office passphrase |    |---|---|    | **Naihati** (start here) | `NAI-FJYC-G2DT-UKH2-CMM3` |    | Nadia | `NAD-62M5-QXB2-95EY-YVJ4` |: choose **Naihati** and enter the passphrase given in our **submission form** (it is kept out of this public repository on purpose). It is asked **only once**; the **Naihati coordinator dashboard** then opens.
 3. The first time, the coordinator also sees a **personal code** (8 characters, `XXXX-XXXX`). Write it down: every later login is the email code **plus** this personal code.
 4. In another browser (or a private window), choose **Health worker**, sign in with a **different email**, fill in **Ask to join** (name, area **Naihati**, role **ASHA**, optional photo) and send it.
 5. Back on the coordinator dashboard, press **Approve** under **"Who wants to join"**.
