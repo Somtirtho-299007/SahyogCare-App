@@ -357,7 +357,7 @@ Backend settings live in `backend/.env` (copy from [`backend/.env.example`](./ba
 
 Frontend: `VITE_API_URL` (build time) points the deployed site at the API, e.g. `https://sahyogcare-api.onrender.com/api/v1`. Locally it is not needed.
 
-Office passphrases are **not** environment variables. Only salted hashes are stored in `backend/app/offices.py`, and the passphrases are given privately to each district office. They are only a fallback: a listed officer email never needs one.
+Office passphrases are **not** environment variables. Only salted hashes are stored in `backend/app/offices.py`, and the passphrases are normally given privately to each district office (they are shown in this README only for judging; new ones are issued with `python -m app.offices new "Area"` after the evaluation). They are only a fallback: a listed officer email never needs one.
 
 **Deploy:** Render → **New → Blueprint** → this repo creates the API and PostgreSQL from [`render.yaml`](./render.yaml). The frontend is a Render **Static Site**: build `npm install && npm run build`, publish `dist`, set `VITE_API_URL`.
 
