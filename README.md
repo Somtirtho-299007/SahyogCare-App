@@ -258,7 +258,7 @@ Every error returns `{"error": {"code", "message", "details", "request_id"}}` wi
 Use one browser window per person. Each step feeds the next.
 
 ### 1. District Office (Coordinator, Naihati): **do this first**
-1. **District office** → email → 6-digit code → area **Naihati** + office passphrase (from the submission form, asked only once) → coordinator dashboard. Note the personal code shown the first time.
+1. **District office** → email → 6-digit code → area **Naihati** + office passphrase `NAI-FJYC-G2DT-UKH2-CMM3` (asked only once) → coordinator dashboard. Note the personal code shown the first time.
 2. Hospitals: only Naihati hospitals appear. Open **Manage** and set the General ward to 20 total, 15 occupied: it shows **5 free**. Add the **Emergency** service and tick **has ambulance**.
 3. Keep this window open to approve people in the next steps.
 
