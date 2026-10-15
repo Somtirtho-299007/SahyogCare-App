@@ -39,10 +39,10 @@ The full walk-through is in [Complete workflow](#complete-workflow-how-to-test-i
 
 | Desktop | Mobile |
 |---|---|
-| ![Patient dashboard](./screenshots/desktop-patient.png) | ![Medical team on mobile](./screenshots/mobile-medical-team.jpeg) |
-| ![Login](./screenshots/desktop-login.png) | ![Login on mobile](./screenshots/mobile-login.jpeg) |
-| ![ASHA dashboard with language sidebar](./screenshots/desktop-asha-language-sidebar.png) | ![ASHA on mobile](./screenshots/mobile-asha.jpeg) |
-
+| ![Sign-in: three doors](./screenshots/desktop-login.png) | ![ASHA on mobile](./screenshots/mobile-asha.jpeg) |
+| ![District office: approve people, watch beds](./screenshots/desktop-coordinator.png) | ![Hospital team on mobile](./screenshots/mobile-medical.jpeg) |
+| ![Referral sent: QR pass and bed held](./screenshots/desktop-asha-referal.png) | ![Patient's own account](./screenshots/mobile-patient.jpeg) |
+| ![Hospital queue with bed panel](./screenshots/desktop-medical.png) | |
 ---
 
 ## What It Does
