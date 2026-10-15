@@ -291,7 +291,7 @@ Use one browser window per person. Each step feeds the next.
 
 ### 7. Coordinator again
 - Dashboard counts match what happened, and late or silent referrals appear as alerts.
-- Separation check: a Nadia coordinator (another email + Nadia passphrase) sees **none** of the Naihati data.
+- - Separation check: sign in with another email as a **Nadia** coordinator (passphrase `NAD-62M5-QXB2-95EY-YVJ4`). It sees **none** of the Naihati data, and the Naihati coordinator sees none of Nadia's. sees **none** of the Naihati data.
 
 ```text
 ASHA ──referral + bed hold──► Hospital staff ──accept──► arrival ──► Doctor ──outcome──► Follow-up ──► CLOSED
