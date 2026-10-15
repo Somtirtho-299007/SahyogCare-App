@@ -404,7 +404,7 @@ What we would architect differently:
 - Run the watchdog and rate limiter outside the web server from day one (a scheduled worker and Redis), so more servers can be added without changes.
 - Design the data model with areas and approval from the start instead of adding them later through migrations.
 
-**Commits:** 85+ commits are visible in the repository history.
+**Commits:** 90+ commits are visible in the repository history.
 
 ---
 
