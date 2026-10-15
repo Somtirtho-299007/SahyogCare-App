@@ -79,3 +79,32 @@ def test_only_coordinators_make_codes(client, db, auth):
     assert post(client, "/invite-codes", coord, {"role": "DOCTOR"}).status_code == 422  # needs a hospital
     assert post(client, "/invite-codes", coord, {"role": "WORKER", "facility_id": facility_id(db)}).status_code == 422
     assert db.scalar(select(InviteCode)) is None
+
+
+# ---------- district office passphrase ----------
+
+
+def test_office_enters_with_its_passphrase(client, db, auth, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "office_passphrases", "Naihati:naihati_do_4821, Nadia:nadia_do_9930")
+    me, user = sign_up(client, "do.naihati@gmail.com")
+    wrong = post(client, "/invite-codes/office", me, {"district": "Naihati", "name": "DO", "passphrase": "nadia_do_9930"})
+    assert wrong.json()["error"]["code"] == "PASSPHRASE_INVALID"
+    r = post(client, "/invite-codes/office", me, {"district": "naihati", "name": "Naihati DO",
+                                                  "passphrase": "naihati_do_4821"})
+    assert r.status_code == 200, r.text
+    assert r.json()["role"] == "COORDINATOR" and r.json()["district"] == "Naihati" and r.json()["approved"]
+    names = [f["name"] for f in client.get(f"{API}/facilities", headers=me).json()]
+    assert names == ["Naihati State General Hospital"]
+
+
+def test_office_passphrase_needs_configuring_and_limits_guessing(client, db, auth, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "office_passphrases", "")
+    me, _ = sign_up(client, "guess@gmail.com")
+    body = {"district": "Nadia", "name": "X", "passphrase": "anything"}
+    assert post(client, "/invite-codes/office", me, body).json()["error"]["code"] == "PASSPHRASE_INVALID"
+    codes = [post(client, "/invite-codes/office", me, {**body, "passphrase": f"try{i}"}).status_code for i in range(5)]
+    assert codes[-1] == 429

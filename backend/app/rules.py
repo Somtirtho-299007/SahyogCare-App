@@ -336,6 +336,8 @@ INVITE_PREFIX = {
 INVITE_RANDOM_LENGTH = 8
 # Wrong codes a logged-in person may try before waiting (stops guessing).
 INVITE_ATTEMPTS_PER_10_MIN = 5
+# Wrong office passphrases a logged-in person may try per 10 minutes.
+OFFICE_ATTEMPTS_PER_10_MIN = 5
 # Codes for coordinators are always single-use and short-lived.
 COORDINATOR_INVITE_MAX_DAYS = 7
 

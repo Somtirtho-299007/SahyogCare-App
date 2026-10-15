@@ -40,12 +40,13 @@ def db():
 @pytest.fixture()
 def client(db):
     from app.routers.auth import code_limiter
-    from app.routers.invites import redeem_limiter
+    from app.routers.invites import office_limiter, redeem_limiter
     from app.routers.public import lookup_limiter
 
     lookup_limiter.reset()
     code_limiter.reset()
     redeem_limiter.reset()
+    office_limiter.reset()
     with TestClient(app) as c:
         yield c
 

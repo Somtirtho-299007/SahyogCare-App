@@ -141,6 +141,10 @@ function App() {
           user={session.user}
           onApproved={(user) => signIn({ screen: SCREEN_FOR[user.role], user })}
           onSignOut={signOut}
+          onPatient={() => {
+            signOut();
+            signIn({ screen: "patient", user: null });
+          }}
         />
         <LanguageSidebar />
       </>
@@ -200,17 +204,18 @@ const REQUEST_ROLES = [
 ];
 const NEEDS_HOSPITAL = new Set(["FACILITY_STAFF", "DOCTOR"]);
 
-function AccessScreen({ user, onApproved, onSignOut }) {
+function AccessScreen({ user, onApproved, onSignOut, onPatient }) {
   const [mine, setMine] = useState(undefined); // undefined = loading, null = no request yet
   const [facilities, setFacilities] = useState([]);
+  // Nobody is put in an area by default: each person picks where they work.
   const [form, setForm] = usePersisted("sahyog_join_form", {
     role: "WORKER",
     name: "",
     facility_id: "",
     note: "",
-    district: user.district,
+    district: "",
   });
-  const [districts, setDistricts] = useState([user.district]);
+  const [districts, setDistricts] = useState(null); // null while loading
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
@@ -228,9 +233,12 @@ function AccessScreen({ user, onApproved, onSignOut }) {
   }, []);
   usePolling(check);
   useEffect(() => {
-    getDistricts().then(setDistricts).catch(() => {});
+    getDistricts()
+      .then(setDistricts)
+      .catch(() => setDistricts([]));
   }, []);
   useEffect(() => {
+    if (!form.district) return setFacilities([]);
     api.get(`/facilities${qs({ district: form.district })}`).then(setFacilities).catch(() => {});
   }, [form.district]);
 
@@ -251,6 +259,20 @@ function AccessScreen({ user, onApproved, onSignOut }) {
   };
 
   const [invite, setInvite] = useState("");
+  const [passphrase, setPassphrase] = useState("");
+  const enterOffice = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      await api.post("/invite-codes/office", { district: form.district, name: form.name.trim(), passphrase });
+      setPassphrase("");
+      await check();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
   const redeem = async () => {
     setBusy(true);
     setError("");
@@ -265,7 +287,7 @@ function AccessScreen({ user, onApproved, onSignOut }) {
   };
 
   const waiting = mine?.status === "PENDING";
-  const canSend = form.name.trim() && (!NEEDS_HOSPITAL.has(form.role) || form.facility_id);
+  const canSend = form.name.trim() && form.district && (!NEEDS_HOSPITAL.has(form.role) || form.facility_id);
   return (
     <div className="auth-card-wrap access-wrap">
       <div className="auth-card">
@@ -301,8 +323,13 @@ function AccessScreen({ user, onApproved, onSignOut }) {
             <label>Your name</label>
             <input id="join-name" value={form.name} onChange={set("name")} placeholder="Full name" />
             <label>Where you work</label>
+            {districts === null ? (
+              <p className="otp-note">Loading areas…</p>
+            ) : districts.length === 0 ? (
+              <p className="otp-note" role="alert">Could not load the list of areas. Refresh the page.</p>
+            ) : null}
             <div className="role-grid area-grid">
-              {districts.map((d) => (
+              {(districts || []).map((d) => (
                 <button
                   key={d}
                   className={`role-choice ${form.district === d ? "selected" : ""}`}
@@ -339,7 +366,7 @@ function AccessScreen({ user, onApproved, onSignOut }) {
             {NEEDS_HOSPITAL.has(form.role) && (
               <>
                 <label>Your hospital</label>
-                <select className="otp-input" value={form.facility_id} onChange={set("facility_id")}>
+                <select className="join-select" value={form.facility_id} onChange={set("facility_id")}>
                   <option value="">Choose your hospital</option>
                   {facilities.map((f) => (
                     <option key={f.id} value={f.id}>
@@ -349,11 +376,35 @@ function AccessScreen({ user, onApproved, onSignOut }) {
                 </select>
               </>
             )}
-            <label>How the coordinator can confirm it's you (optional)</label>
-            <input value={form.note} onChange={set("note")} placeholder="e.g. ASHA, Chakdaha block, ID 1234" />
-            <button className="primary-btn" onClick={submit} disabled={!canSend || busy}>
-              {busy ? "Sending…" : "Ask to join"}
-            </button>
+            {form.role === "COORDINATOR" ? (
+              <>
+                <label>District office passphrase</label>
+                <input
+                  id="office-passphrase"
+                  type="password"
+                  autoComplete="off"
+                  value={passphrase}
+                  onChange={(e) => setPassphrase(e.target.value)}
+                  placeholder={form.district ? `The ${form.district} office passphrase` : "Choose your area first"}
+                />
+                <button
+                  className="primary-btn"
+                  onClick={enterOffice}
+                  disabled={!form.district || !form.name.trim() || !passphrase || busy}
+                >
+                  {busy ? "Checking…" : "Enter as district office"}
+                </button>
+                <p className="otp-note">Only the district office knows this passphrase. Wrong tries are limited.</p>
+              </>
+            ) : (
+              <>
+                <label>How the coordinator can confirm it's you (optional)</label>
+                <input value={form.note} onChange={set("note")} placeholder="e.g. ASHA, Chakdaha block, ID 1234" />
+                <button className="primary-btn" onClick={submit} disabled={!canSend || busy}>
+                  {busy ? "Sending…" : "Ask to join"}
+                </button>
+              </>
+            )}
           </>
         )}
         {error && (
@@ -361,6 +412,9 @@ function AccessScreen({ user, onApproved, onSignOut }) {
             {error}
           </div>
         )}
+        <button className="link-btn" onClick={onPatient}>
+          I'm a patient: track my referral
+        </button>
         <button className="link-btn" onClick={onSignOut}>
           Sign out
         </button>

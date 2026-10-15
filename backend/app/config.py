@@ -53,6 +53,12 @@ class Settings(BaseSettings):
     # need a coordinator's approval because they see other people's patients.
     auto_approve_asha: bool = False
 
+    # Fixed passphrase per area that only that area's district office knows, e.g.
+    # "Naihati:naihati_do_<4 secret digits>,Nadia:<another>". Whoever logs in with
+    # their own email and enters it becomes that area's coordinator at once.
+    # Set it only on the server (Render), never in the code or in screenshots.
+    office_passphrases: str = ""
+
     # Fake demo hospitals and @sahyogcare.test accounts. Set to false on the live
     # server: the demo hospitals are then hidden and the demo accounts switched off.
     demo_data: bool = True
@@ -79,6 +85,13 @@ class Settings(BaseSettings):
         if not name:
             return None
         return next((d for d in self.district_list if d.lower() == name.strip().lower()), None)
+
+    def office_passphrase(self, area: str) -> str | None:
+        for item in self.office_passphrases.split(","):
+            name, _, phrase = item.strip().partition(":")
+            if name.strip().lower() == area.lower() and phrase.strip():
+                return phrase.strip()
+        return None
 
     @property
     def coordinator_entries(self) -> list[tuple[str, str]]:

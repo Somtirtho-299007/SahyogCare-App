@@ -326,3 +326,4 @@ body{background-image:linear-gradient(rgba(11,122,117,.035) 1px,transparent 1px)
 @keyframes settle{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 @keyframes softPulse{0%,100%{box-shadow:0 0 0 0 rgba(214,73,63,.35)}50%{box-shadow:0 0 0 6px rgba(214,73,63,0)}}
 @media(max-width:600px){.emergency-box{flex-wrap:wrap}.emergency-box .secondary-btn{width:100%;text-align:center}.area-grid{grid-template-columns:1fr!important}}
+.join-select{width:100%;max-width:100%;border:1px solid var(--line);background:#fbfdfd;border-radius:13px;padding:12px 13px;font-size:15px;color:var(--ink)}

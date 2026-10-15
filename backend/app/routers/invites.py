@@ -8,6 +8,7 @@
 - The very first coordinator comes from SAHYOG_COORDINATOR_EMAILS (no code needed).
 """
 
+import hmac
 from datetime import datetime, timedelta
 from typing import Literal
 
@@ -18,9 +19,16 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.errors import ApiError
-from app.models import AccessRequest, AuditLog, Facility, InviteCode, User
+from app.models import AccessRequest, AuditLog, Facility, InviteCode, Notification, User
 from app.ratelimit import RateLimiter
-from app.rules import COORDINATOR_INVITE_MAX_DAYS, INVITE_ATTEMPTS_PER_10_MIN, Role, new_invite_code
+from app.config import settings
+from app.rules import (
+    COORDINATOR_INVITE_MAX_DAYS,
+    INVITE_ATTEMPTS_PER_10_MIN,
+    OFFICE_ATTEMPTS_PER_10_MIN,
+    Role,
+    new_invite_code,
+)
 from app.schemas import UserOut
 from app.security import current_user_any, require_roles
 from app.timeutil import as_utc, utcnow
@@ -28,6 +36,7 @@ from app.workflow import commit
 
 router = APIRouter(prefix="/invite-codes", tags=["invite codes"])
 redeem_limiter = RateLimiter(INVITE_ATTEMPTS_PER_10_MIN, window_seconds=600)
+office_limiter = RateLimiter(OFFICE_ATTEMPTS_PER_10_MIN, window_seconds=600)
 HOSPITAL_ROLES = {Role.FACILITY_STAFF, Role.DOCTOR}
 
 
@@ -146,5 +155,40 @@ def redeem(body: RedeemIn, user: User = Depends(current_user_any), db: Session =
                             decision_note=f"Joined with invite code {invite.code[:7]}…")
     db.add(request)
     db.add(AuditLog(actor_id=user.id, action="INVITE_REDEEMED", target_type="invite_code", target_id=invite.id))
+    commit(db)
+    return UserOut.model_validate(user)
+
+
+class OfficeJoinIn(BaseModel):
+    district: str = Field(min_length=1, max_length=80)
+    name: str = Field(min_length=1, max_length=120)
+    passphrase: str = Field(min_length=1, max_length=200)
+
+
+@router.post("/office", response_model=UserOut)
+def join_as_office(body: OfficeJoinIn, user: User = Depends(current_user_any),
+                   db: Session = Depends(get_db)) -> UserOut:
+    """District office enters with the fixed passphrase only it knows (set on the server)."""
+    if user.approved:
+        raise ApiError(409, "ALREADY_APPROVED", "Your account already has a role.")
+    office_limiter.check(user.id)
+    area = settings.canonical_district(body.district)
+    expected = settings.office_passphrase(area) if area else None
+    # Same answer for an unknown area, an area without a passphrase, and a wrong passphrase.
+    if expected is None or not hmac.compare_digest(body.passphrase.strip().encode(), expected.encode()):
+        raise ApiError(400, "PASSPHRASE_INVALID", "This passphrase is not right for this area.")
+
+    now = utcnow()
+    user.role, user.facility_id, user.name, user.approved, user.district = (
+        Role.COORDINATOR, None, body.name.strip(), True, area)
+    db.add(AccessRequest(user_id=user.id, requested_role=Role.COORDINATOR, name=user.name, status="APPROVED",
+                         decided_at=now, decision_note="Joined with the district office passphrase"))
+    db.add(AuditLog(actor_id=user.id, action="OFFICE_PASSPHRASE_USED", target_type="user", target_id=user.id))
+    # Every existing coordinator of the area learns that someone joined this way.
+    others = db.scalars(select(User.id).where(User.role == Role.COORDINATOR, User.id != user.id,
+                                              func.lower(User.district) == area.lower(), User.is_active.is_(True)))
+    for cid in others:
+        db.add(Notification(user_id=cid, referral_id=None, kind="OFFICE_JOINED",
+                            message=f"{user.name} ({user.email}) joined the {area} office with the passphrase."))
     commit(db)
     return UserOut.model_validate(user)
