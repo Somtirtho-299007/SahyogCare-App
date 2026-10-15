@@ -14,14 +14,14 @@ def test_health(client):
 
 def test_seed_is_repeatable(db):
     assert seed(db) == {"facilities": 0, "users": 0, "wards": 0}
-    assert len(db.scalars(select(Facility)).all()) == 4
+    assert len(db.scalars(select(Facility)).all()) == 12  # 7 real Nadia + 1 Naihati + 4 demo
     assert {u.role for u in db.scalars(select(User))} == {"WORKER", "FACILITY_STAFF", "DOCTOR", "COORDINATOR"}
 
 
 def test_facility_search(client, auth):
     h = auth("WORKER")
     names = [f["name"] for f in client.get("/api/v1/facilities", headers=h).json()]
-    assert len(names) == 4
+    assert len(names) == 11 and "Chakdaha State General Hospital" in names
 
     maternity = client.get("/api/v1/facilities", headers=h, params={"service": "maternity"}).json()
     assert {f["type"] for f in maternity} == {"CHC", "PHC"}
@@ -29,7 +29,9 @@ def test_facility_search(client, auth):
     by_text = client.get("/api/v1/facilities", headers=h, params={"q": "paediatrics"}).json()
     assert [f["name"] for f in by_text] == ["Nadia Sub-Divisional Hospital"]
 
-    assert client.get("/api/v1/facilities", headers=h, params={"district": "Elsewhere"}).json() == []
+    # Approved users always see their own area, whatever they ask for.
+    other = client.get("/api/v1/facilities", headers=h, params={"district": "Naihati"}).json()
+    assert {f["district"] for f in other} == {"Nadia"}
 
 
 def test_unknown_availability_is_stale(client, auth):
@@ -77,3 +79,29 @@ def test_facilities_need_login(client):
 def test_root_redirects_to_docs(client):
     r = client.get("/", follow_redirects=False)
     assert r.status_code in (302, 307) and r.headers["location"] == "/docs"
+
+
+def test_real_hospitals_carry_their_source(client, auth):
+    h = auth("WORKER")
+    chakdaha = next(f for f in client.get("/api/v1/facilities", headers=h).json()
+                    if f["name"] == "Chakdaha State General Hospital")
+    assert chakdaha["pincode"] == "741222" and chakdaha["phone"] == "7548975218"
+    assert chakdaha["source"].startswith("nadia.gov.in")
+    assert chakdaha["wards"] == []  # no invented bed numbers
+
+
+def test_live_server_hides_demo_data(client, db, auth, monkeypatch):
+    from app.config import settings
+
+    from app.security import access_token_for
+
+    monkeypatch.setattr(settings, "demo_data", False)
+    seed(db)
+    real = User(email="officer@gmail.com", name="Officer", role="COORDINATOR", district="Nadia")
+    db.add(real)
+    db.commit()
+    h = {"Authorization": f"Bearer {access_token_for(real)}"}
+    names = [f["name"] for f in client.get("/api/v1/facilities", headers=h).json()]
+    assert len(names) == 7 and "Kalyani District Hospital" not in names
+    asha = db.scalar(select(User).where(User.email == "asha@sahyogcare.test"))
+    assert asha.is_active is False

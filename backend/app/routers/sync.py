@@ -25,7 +25,7 @@ from app.access import referral_scope
 from app.db import get_db
 from app.errors import ApiError
 from app.models import IdempotencyKey, Notification, Referral, User
-from app.routers import followups, patients, referrals
+from app.routers import ambulance, followups, patients, referrals
 from app.rules import Role
 from app.schemas import (
     EncounterIn,
@@ -35,8 +35,11 @@ from app.schemas import (
     PassVerifyIn,
     PatientIn,
     ReferralIn,
+    AmbulanceDispatchIn,
+    AmbulanceRequestIn,
     ReferralOut,
     RejectIn,
+    RerouteIn,
 )
 from app.security import current_user
 from app.timeutil import as_utc, utcnow
@@ -48,6 +51,7 @@ OpType = Literal[
     "CREATE_PATIENT", "CREATE_ENCOUNTER", "CREATE_REFERRAL", "SCAN_PASS",
     "ACCEPT", "REJECT", "ARRIVAL", "CONSULTATION", "OUTCOME", "CLOSE", "ESCALATE",
     "COMPLETE_FOLLOW_UP", "MISS_FOLLOW_UP",
+    "REROUTE", "REQUEST_AMBULANCE", "DISPATCH_AMBULANCE", "AMBULANCE_PICKED_UP",
 ]
 
 
@@ -114,6 +118,14 @@ HANDLERS: dict[str, tuple[set[str] | None, Callable[[dict, User, Session], BaseM
     "COMPLETE_FOLLOW_UP": ({Role.WORKER, Role.COORDINATOR}, lambda p, u, db: followups.complete(
         _pop(p, "follow_up_id"), _note(p), u, db)),
     "MISS_FOLLOW_UP": ({Role.WORKER}, lambda p, u, db: followups.miss(_pop(p, "follow_up_id"), _note(p), u, db)),
+    "REROUTE": ({Role.WORKER, Role.COORDINATOR}, lambda p, u, db: referrals.reroute(
+        _pop(p, "referral_id"), RerouteIn(**p), u, db)),
+    "REQUEST_AMBULANCE": ({Role.WORKER, Role.COORDINATOR}, lambda p, u, db: ambulance.request_ambulance(
+        _pop(p, "referral_id"), AmbulanceRequestIn(**p), u, db)),
+    "DISPATCH_AMBULANCE": ({Role.FACILITY_STAFF}, lambda p, u, db: ambulance.dispatch(
+        _pop(p, "referral_id"), AmbulanceDispatchIn(**p), u, db)),
+    "AMBULANCE_PICKED_UP": ({Role.FACILITY_STAFF, Role.WORKER}, lambda p, u, db: ambulance.picked_up(
+        _pop(p, "referral_id"), u, db)),
 }
 
 

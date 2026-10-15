@@ -12,12 +12,19 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Facility, FollowUp, Patient, Referral, User
+from app import ambulance, beds
+from app.models import AmbulanceTrip, Facility, FollowUp, Patient, Referral, User
+from app.recommend import recommend
 from app.rules import (
+    AMBULANCE_LATE_AFTER_ETA,
+    AMBULANCE_NOT_DISPATCHED_AFTER,
     COORDINATOR_ESCALATION_FACTOR,
+    NATIONAL_AMBULANCE_NUMBER,
     NOT_ACCEPTED_AFTER,
     NOT_ARRIVED_AFTER,
     WATCHDOG_EVERY,
+    AmbulanceStatus,
+    HoldStatus,
     Role,
     Status,
     Triage,
@@ -51,7 +58,10 @@ def _last_event_at(referral: Referral, status: Status) -> datetime | None:
 def run_watchdog(db: Session, now: datetime | None = None) -> dict[str, int]:
     """Check every open referral once. Returns how many alerts or changes were made."""
     now = now or utcnow()
-    counts = {"not_accepted": 0, "not_arrived": 0, "follow_ups_overdue": 0, "coordinator_alerts": 0}
+    counts = {"not_accepted": 0, "not_arrived": 0, "follow_ups_overdue": 0, "coordinator_alerts": 0,
+              "bed_holds_expired": 0, "ambulance_alerts": 0}
+    _expire_bed_holds(db, now, counts)
+    _check_ambulances(db, now, counts)
 
     watched = db.scalars(
         select(Referral).where(Referral.status.in_([Status.CREATED, Status.ACCEPTED, Status.FOLLOW_UP_DUE]))
@@ -104,6 +114,66 @@ def run_watchdog(db: Session, now: datetime | None = None) -> dict[str, int]:
                               f"{referral.code}: follow-up for {patient.name} is overdue."):
                         counts["coordinator_alerts"] += 1
     return counts
+
+
+def _best_other(db: Session, referral: Referral) -> str:
+    owner = db.get(User, referral.created_by_id)
+    best = recommend(db, referral.requested_service, district=owner.district,
+                     exclude={referral.destination_facility_id}, limit=1)
+    if not best or (best[0].beds_free is not None and best[0].beds_free <= 0):
+        return ""
+    b = best[0]
+    beds_txt = f" ({b.beds_free} bed{'s' if b.beds_free != 1 else ''} free)" if b.beds_free else ""
+    return f" Suggested instead: {b.facility_name}{beds_txt}."
+
+
+def _expire_bed_holds(db: Session, now: datetime, counts: dict[str, int]) -> None:
+    """A bed nobody used in time goes back to the pool, and the ASHA is offered the next best hospital."""
+    for hold in beds.expired_holds(db, now):
+        referral = db.get(Referral, hold.referral_id)
+        hold.status, hold.ended_at = HoldStatus.EXPIRED, now
+        hold.release_reason = ("Hospital did not accept in time" if referral.status == Status.CREATED
+                               else "Patient did not arrive in time")
+        counts["bed_holds_expired"] += 1
+        facility = db.get(Facility, referral.destination_facility_id)
+        notify(db, referral.created_by_id, referral, "BED_HOLD_EXPIRED",
+               f"{referral.code}: the bed held at {facility.name} was released "
+               f"({hold.release_reason.lower()}).{_best_other(db, referral)}")
+        for cid in _coordinators(db, referral):
+            if notify(db, cid, referral, "BED_HOLD_EXPIRED",
+                      f"{referral.code} ({referral.triage.lower()}): bed hold at {facility.name} expired — "
+                      f"{hold.release_reason.lower()}."):
+                counts["coordinator_alerts"] += 1
+
+
+def _check_ambulances(db: Session, now: datetime, counts: dict[str, int]) -> None:
+    trips = db.scalars(select(AmbulanceTrip).where(
+        AmbulanceTrip.status.in_([AmbulanceStatus.REQUESTED, AmbulanceStatus.DISPATCHED])
+    ))
+    for trip in trips:
+        referral = db.get(Referral, trip.referral_id)
+        facility = db.get(Facility, trip.facility_id)
+        triage = Triage(referral.triage)
+        if trip.status == AmbulanceStatus.REQUESTED:
+            if now - as_utc(trip.requested_at) <= AMBULANCE_NOT_DISPATCHED_AFTER[triage]:
+                continue
+            kind = "WATCH_AMBULANCE_NOT_SENT"
+            msg = (f"{referral.code}: {facility.name} has not sent its ambulance yet. "
+                   f"Call {NATIONAL_AMBULANCE_NUMBER} now.")
+        else:
+            due = ambulance.expected_at(trip)
+            if due is None or now - due <= AMBULANCE_LATE_AFTER_ETA:
+                continue
+            kind = "WATCH_AMBULANCE_LATE"
+            msg = (f"{referral.code}: the ambulance from {facility.name} is over "
+                   f"{int(AMBULANCE_LATE_AFTER_ETA.total_seconds() // 60)} min late."
+                   + (f" Driver: {trip.driver_phone}." if trip.driver_phone else "")
+                   + f" If it is not coming, call {NATIONAL_AMBULANCE_NUMBER}.")
+        if notify(db, referral.created_by_id, referral, kind, msg):
+            counts["ambulance_alerts"] += 1
+        for cid in _coordinators(db, referral):
+            if notify(db, cid, referral, kind, msg):
+                counts["coordinator_alerts"] += 1
 
 
 async def watchdog_loop(session_factory) -> None:

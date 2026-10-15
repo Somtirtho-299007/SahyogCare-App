@@ -273,3 +273,56 @@ body{background-image:linear-gradient(rgba(11,122,117,.035) 1px,transparent 1px)
 
 @media(max-width:600px){.stats{border-radius:18px}}
 .consult-modal-card{max-height:calc(100vh - 40px);max-height:calc(100dvh - 40px);overflow-y:auto}
+
+/* Four role choices on the login card */
+.role-grid{grid-template-columns:repeat(4,1fr)}
+@media(max-width:600px){.role-grid{grid-template-columns:1fr 1fr}}
+.access-wrap{min-height:100vh;background:#f4faf9}
+.ward-chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+
+/* ---------- Beds, ambulance, emergency, re-routing ---------- */
+.chip{display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:999px;font-size:11.5px;font-weight:700;background:#edf6f4;color:var(--deep);border:1px solid transparent}
+.muted-chip{background:#f3f6f6;color:var(--muted)}
+.bed-held{background:#e4f6ee;color:#1f6b4b;border-color:#c5ead9}
+.bed-occupied{background:#e6f0fb;color:#1f4f84;border-color:#cfe0f5}
+.bed-released{background:#f4f1ea;color:#7a6440;border-color:#ebe2cf}
+.bed-expired{background:#fdecea;color:#9a3a31;border-color:#f6d3ce}
+.ward-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.beds-pill{white-space:nowrap;font-size:12px;padding:6px 10px;border-radius:10px;background:#f1f6f5;align-self:center}
+.beds-pill.good{background:#e4f6ee;color:#1f6b4b}
+.beds-pill.bad{background:#fdecea;color:#9a3a31}
+.facility>div{min-width:0}
+.small-note{font-size:12px;margin:2px 0 10px}
+.notice{border-radius:16px;padding:14px 16px;margin:12px 0;display:grid;gap:10px}
+.notice.warn{background:#fff6e8;border:1px solid #f1dcb3;color:#6d4b12}
+.notice.good{background:#e9f7f1;border:1px solid #c9eadb;color:#1f5e44}
+.notice p{margin:0}
+.alt-row{display:grid;gap:4px}
+.reroute-block{margin:14px auto 0;max-width:560px;text-align:left}
+.reroute-block>.secondary-btn{display:block;margin:0 auto}
+.amb-block{display:grid;gap:10px;margin:14px auto 0;max-width:560px;text-align:left}
+.amb-card{display:grid;gap:3px;padding:11px 14px;border-radius:14px;background:#eef5fb;border:1px solid #d8e7f4;margin-top:8px}
+.amb-card small{color:var(--muted);font-size:12px}
+.amb-dispatched{background:#e9f7f1;border-color:#c9eadb}
+.amb-cancelled{background:#f6f2ec;border-color:#ebe3d6}
+.inline-form{display:flex;gap:8px;flex-wrap:wrap}
+.inline-form input{flex:1;min-width:180px;border:1px solid var(--line);border-radius:12px;padding:11px 12px;background:#fbfdfd}
+.emergency-box{display:flex;align-items:center;gap:12px;padding:13px 16px;border-radius:16px;background:#fff1ef;border:1px solid #f4cfc9;margin-top:18px}
+.emergency-box.compact{margin-top:0}
+.emergency-box>div{flex:1;min-width:0;display:grid;gap:2px}
+.emergency-box b{color:#8e2f27}
+.emergency-box small{color:#93605b;font-size:12px}
+.emergency-box .secondary-btn{background:#c9473f;color:#fff;text-decoration:none;white-space:nowrap}
+.emergency-dot{width:10px;height:10px;border-radius:50%;background:#d6493f;flex:none;animation:softPulse 2.4s ease-in-out infinite}
+.vitals-line{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:var(--muted);margin:6px 0 0}
+.vitals-line b{color:var(--deep)}
+.link-as-btn{display:block;text-align:center;text-decoration:none;margin-top:10px}
+.area-grid{grid-template-columns:repeat(2,1fr)!important}
+
+/* Subtle motion: things settle in, nothing loops except the emergency dot. */
+.reveal{animation:settle .32s cubic-bezier(.2,.8,.2,1) both}
+.queue-item,.facility,.mini-ref{transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}
+.chip{transition:background .25s ease,color .25s ease}
+@keyframes settle{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@keyframes softPulse{0%,100%{box-shadow:0 0 0 0 rgba(214,73,63,.35)}50%{box-shadow:0 0 0 6px rgba(214,73,63,0)}}
+@media(max-width:600px){.emergency-box{flex-wrap:wrap}.emergency-box .secondary-btn{width:100%;text-align:center}.area-grid{grid-template-columns:1fr!important}}

@@ -30,11 +30,18 @@ services:
         fromDatabase:
           name: sahyogcare-db
           property: connectionString
+      - key: SAHYOG_DISTRICTS
+        value: Nadia,Naihati
+      - key: SAHYOG_DEMO_DATA
+        value: "false"
+      - key: SAHYOG_COORDINATOR_EMAILS
+        sync: false
+      - key: SAHYOG_BREVO_API_KEY
+        sync: false
       - key: SAHYOG_CORS_ORIGINS
         value: https://sahyogcare-app.onrender.com,http://localhost:5173
-      # Until email is set up, login codes appear in the Render "Logs" tab.
       - key: SAHYOG_LOG_LOGIN_CODES
-        value: "true"
+        value: "false"
       # Optional: fill these in the dashboard to send real emails (Gmail App Password).
       - key: SAHYOG_SMTP_HOST
         sync: false

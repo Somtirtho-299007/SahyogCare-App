@@ -83,6 +83,17 @@ Query example:
 
 Availability responses must include `updated_at`.
 
+### Beds and recommendations
+
+| Method | Route | Role | Purpose |
+|---|---|---|---|
+| GET | `/facilities/recommend?service=&latitude=&longitude=` | Authenticated | Hospitals in the user's district offering the service, best first, with `score` and plain-language `reasons` |
+| PUT | `/facilities/{facility_id}/beds/{ward}` | FACILITY_STAFF (own hospital) / COORDINATOR (district) | Report `{"total": 10, "occupied": 6}` for GENERAL, EMERGENCY, MATERNITY, PAEDIATRIC or ICU; re-sending confirms the counts are current |
+| POST | `/facilities` | COORDINATOR | Add a hospital with services and wards |
+| PATCH | `/facilities/{facility_id}` | COORDINATOR | Phone, location, `has_ambulance`, extra services |
+
+Every facility response includes `wards` with `total`, `occupied`, `held` (reserved for patients on the way), `free`, `updated_at` and `stale` (not confirmed in 12 hours).
+
 ## Referrals
 
 | Method | Route | Role | Purpose |
@@ -99,6 +110,15 @@ Availability responses must include `updated_at`.
 | GET | `/referrals/{referral_id}/pass` | WORKER | Signed QR referral pass |
 | POST | `/referral-passes/verify` | FACILITY_STAFF | Scan a pass; records arrival (offline scans sync with their scan time) |
 | GET | `/referral-rejection-reasons` | Authenticated | Fixed list of rejection reasons |
+
+| GET | `/referrals/{referral_id}/alternatives` | Any role in scope | Other hospitals for the same service, best first, skipping every hospital already tried |
+| POST | `/referrals/{referral_id}/reroute` | WORKER / COORDINATOR | `{"destination_facility_id": "...", "note": "..."}` — new referral with a new code; the old one becomes `REROUTED` (or stays `REJECTED`), its bed and ambulance are released |
+| POST | `/referrals/{referral_id}/ambulance` | WORKER / COORDINATOR | Request the hospital's ambulance `{"pickup_note": "..."}`; `NO_HOSPITAL_AMBULANCE` says to call 108 |
+| POST | `/referrals/{referral_id}/ambulance/dispatch` | FACILITY_STAFF | `{"eta_minutes": 25, "vehicle_number": "...", "driver_phone": "..."}`; also accepts the referral |
+| POST | `/referrals/{referral_id}/ambulance/picked-up` | FACILITY_STAFF / WORKER | Patient on board |
+| POST | `/referrals/{referral_id}/ambulance/cancel` | WORKER / FACILITY_STAFF / COORDINATOR | `{"reason": "..."}` |
+
+Creating a referral holds a bed in the ward the service needs (`bed` in the response). If that ward is full the server answers `409 NO_BEDS_AVAILABLE` with `details.alternatives`; send `"allow_without_bed": true` to refer anyway. Arrival (button or pass scan) turns the hold into an occupied bed. A `NO_BEDS` rejection marks the ward full.
 
 `POST /referrals/{id}/reject` takes `{"reason": "SERVICE_UNAVAILABLE", "note": "..."}`. Reasons `SERVICE_UNAVAILABLE` and `NO_DOCTOR_AVAILABLE` mark the requested service unavailable at that facility.
 

@@ -43,12 +43,19 @@ class Settings(BaseSettings):
     # Real email addresses (comma-separated) that are made coordinators when the
     # server starts. The coordinator then adds every other user from the app.
     coordinator_emails: str = ""
-    # District given to coordinators from the setting above and to people who sign up.
+    # Areas this deployment serves, comma-separated. Each area is fully separate: its
+    # coordinator sees and approves only its own people, hospitals and referrals.
+    districts: str = "Nadia,Naihati"
+    # Area given to coordinators listed without one (see coordinator_entries).
     coordinator_district: str = "Nadia"
     # Anyone may sign up with their email. ASHAs (who only ever see their own patients)
     # can be approved automatically; hospital staff, doctors and coordinators always
     # need a coordinator's approval because they see other people's patients.
     auto_approve_asha: bool = False
+
+    # Fake demo hospitals and @sahyogcare.test accounts. Set to false on the live
+    # server: the demo hospitals are then hidden and the demo accounts switched off.
+    demo_data: bool = True
 
     @property
     def is_development(self) -> bool:
@@ -64,8 +71,27 @@ class Settings(BaseSettings):
         return url
 
     @property
-    def coordinator_email_list(self) -> list[str]:
-        return [e.strip().lower() for e in self.coordinator_emails.split(",") if e.strip()]
+    def district_list(self) -> list[str]:
+        return [d.strip() for d in self.districts.split(",") if d.strip()]
+
+    def canonical_district(self, name: str | None) -> str | None:
+        """The configured spelling of an area name, or None when it is not served here."""
+        if not name:
+            return None
+        return next((d for d in self.district_list if d.lower() == name.strip().lower()), None)
+
+    @property
+    def coordinator_entries(self) -> list[tuple[str, str]]:
+        """SAHYOG_COORDINATOR_EMAILS as (email, area): "a@gmail.com:Nadia,b@gmail.com:Naihati".
+        An entry without ":Area" gets coordinator_district."""
+        out = []
+        for item in self.coordinator_emails.split(","):
+            email, _, area = item.strip().partition(":")
+            if email.strip():
+                out.append((email.strip().lower(),
+                            self.canonical_district(area) or self.canonical_district(self.coordinator_district)
+                            or self.coordinator_district))
+        return out
 
     @property
     def cors_origin_list(self) -> list[str]:

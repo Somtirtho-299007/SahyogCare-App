@@ -48,11 +48,13 @@ def test_switched_off_user_gets_no_code(client, db, auth):
 
 
 def test_coordinators_from_settings(db, monkeypatch):
-    monkeypatch.setattr(settings, "coordinator_emails", "Me@Gmail.com, other@gmail.com")
+    monkeypatch.setattr(settings, "coordinator_emails", "Me@Gmail.com, other@gmail.com:naihati")
     assert ensure_coordinators(db) == 2
     assert ensure_coordinators(db) == 0  # safe on every restart
     me = db.scalar(select(User).where(User.email == "me@gmail.com"))
     assert me.role == "COORDINATOR" and me.district == "Nadia"
+    other = db.scalar(select(User).where(User.email == "other@gmail.com"))
+    assert other.district == "Naihati"
 
 
 def test_brevo_sends_the_code(monkeypatch):

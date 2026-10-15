@@ -38,6 +38,8 @@ class Status(StrEnum):
     OVERDUE = "OVERDUE"
     ESCALATED = "ESCALATED"
     CLOSED = "CLOSED"
+    # Sent on to another hospital; the new referral carries on from here.
+    REROUTED = "REROUTED"
 
 
 # "SYSTEM" is the server itself (scheduled jobs, automatic steps).
@@ -60,10 +62,17 @@ TRANSITIONS: dict[tuple[Status, Status], frozenset[str]] = {
     (Status.OVERDUE, Status.CLOSED): frozenset({Role.WORKER, Role.COORDINATOR}),
     (Status.OVERDUE, Status.ESCALATED): frozenset({Role.COORDINATOR}),
     (Status.ESCALATED, Status.CLOSED): frozenset({Role.COORDINATOR}),
+    # Before the patient reaches the hospital, the ASHA or coordinator may send her elsewhere.
+    (Status.CREATED, Status.REROUTED): frozenset({Role.WORKER, Role.COORDINATOR}),
+    (Status.ACCEPTED, Status.REROUTED): frozenset({Role.WORKER, Role.COORDINATOR}),
 }
 
 # The one definition of "open" used by every count and queue.
-FINISHED_STATUSES = frozenset({Status.CLOSED, Status.REJECTED})
+FINISHED_STATUSES = frozenset({Status.CLOSED, Status.REJECTED, Status.REROUTED})
+
+# A referral in these states can be sent on to another hospital
+# (REJECTED: the ASHA picks the next hospital after a refusal).
+REROUTABLE_STATUSES = frozenset({Status.CREATED, Status.ACCEPTED, Status.REJECTED})
 
 
 def is_open(status: str) -> bool:
@@ -251,5 +260,88 @@ def ward_for_service(service: str) -> Ward | None:
     return SERVICE_WARD.get(service.strip().lower())
 
 
-# Bed counts older than this are shown as "not confirmed recently".
+class HoldStatus(StrEnum):
+    HELD = "HELD"  # reserved for the patient, counted as taken
+    OCCUPIED = "OCCUPIED"  # the patient arrived and is in the bed
+    RELEASED = "RELEASED"  # given back (rejected, sent elsewhere, cancelled)
+    EXPIRED = "EXPIRED"  # nobody acted in time, given back automatically
+
+
+# How long a bed is held after the referral is created, before the hospital accepts.
+HOLD_UNTIL_ACCEPTED: dict[Triage, timedelta] = {
+    Triage.EMERGENCY: timedelta(hours=1),
+    Triage.PRIORITY: timedelta(hours=6),
+    Triage.ROUTINE: timedelta(hours=48),
+}
+# Once accepted, the bed stays held this long for the patient to arrive.
+HOLD_UNTIL_ARRIVED = NOT_ARRIVED_AFTER
+
+# Bed counts older than this are shown as "not confirmed recently" and ranked lower.
 BED_DATA_STALE_AFTER = timedelta(hours=12)
+
+
+# ---------- Hospital recommendation (placeholder weights) ----------
+
+# Higher score = better choice. Every number here is a team placeholder.
+SCORE_BEDS_FREE = 50  # the right ward has at least one free bed
+SCORE_PER_FREE_BED = 1  # small bonus per free bed, up to SCORE_FREE_BED_CAP beds
+SCORE_FREE_BED_CAP = 10
+SCORE_NO_BEDS = -60  # the right ward is full
+SCORE_STALE_BEDS = -15  # bed counts not confirmed recently
+SCORE_SERVICE_UNAVAILABLE = -100  # a recent rejection said the service is not running
+SCORE_REJECTION_RATE = -30  # multiplied by the recent rejection rate (0..1)
+SCORE_PER_HOUR_TO_ACCEPT = -1  # per average hour taken to accept, up to 24
+SCORE_PER_KM = -1  # per kilometre, when both locations are known
+# Performance is judged on this many recent days, and only once there are enough referrals.
+PERFORMANCE_WINDOW = timedelta(days=30)
+PERFORMANCE_MIN_REFERRALS = 3
+
+
+# ---------- Ambulance ----------
+
+
+class AmbulanceStatus(StrEnum):
+    REQUESTED = "REQUESTED"  # the ASHA asked the hospital for its ambulance
+    DISPATCHED = "DISPATCHED"  # the hospital sent it
+    PICKED_UP = "PICKED_UP"  # the patient is on board
+    COMPLETED = "COMPLETED"  # the patient reached the hospital
+    CANCELLED = "CANCELLED"
+
+
+AMBULANCE_OPEN = frozenset({AmbulanceStatus.REQUESTED, AmbulanceStatus.DISPATCHED, AmbulanceStatus.PICKED_UP})
+
+# National ambulance number, shown whenever a hospital ambulance is not coming quickly.
+NATIONAL_AMBULANCE_NUMBER = "108"
+
+# Alert when a requested ambulance has not been sent within this time.
+AMBULANCE_NOT_DISPATCHED_AFTER: dict[Triage, timedelta] = {
+    Triage.EMERGENCY: timedelta(minutes=15),
+    Triage.PRIORITY: timedelta(hours=1),
+    Triage.ROUTINE: timedelta(hours=4),
+}
+# Alert when a sent ambulance is this late beyond its ETA.
+AMBULANCE_LATE_AFTER_ETA = timedelta(minutes=30)
+
+
+# ---------- Invite codes ----------
+
+# Readable prefix by role, then a random part. The prefix only helps people read the
+# code; the random part (8 characters from 32, about a trillion combinations) is the secret.
+INVITE_PREFIX = {
+    Role.COORDINATOR: "DA",
+    Role.FACILITY_STAFF: "HS",
+    Role.DOCTOR: "DR",
+    Role.WORKER: "AS",
+}
+INVITE_RANDOM_LENGTH = 8
+# Wrong codes a logged-in person may try before waiting (stops guessing).
+INVITE_ATTEMPTS_PER_10_MIN = 5
+# Codes for coordinators are always single-use and short-lived.
+COORDINATOR_INVITE_MAX_DAYS = 7
+
+
+def new_invite_code(role: str, place: str) -> str:
+    """e.g. HS-KAL-7K3M9QWX: role, first three letters of the hospital or district, secret part."""
+    letters = "".join(ch for ch in place.upper() if ch.isalpha())[:3].ljust(3, "X")
+    secret = "".join(secrets.choice(CODE_ALPHABET) for _ in range(INVITE_RANDOM_LENGTH))
+    return f"{INVITE_PREFIX[Role(role)]}-{letters}-{secret}"

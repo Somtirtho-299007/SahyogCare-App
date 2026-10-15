@@ -109,7 +109,16 @@ export async function verifyCode(email, code) {
   return t.user;
 }
 
+// Fetch the logged-in user again (e.g. to see whether the coordinator approved them).
+export async function refreshMe() {
+  const user = await request("GET", "/me");
+  if (auth) saveAuth({ ...auth, user });
+  return user;
+}
+
 // ---------- public (no login) ----------
+
+export const getDistricts = () => send("GET", "/public/districts");
 
 export const lookupReferral = (code, phoneLast4) =>
   send("POST", "/public/referral-status", { code, phone_last4: phoneLast4 });

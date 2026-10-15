@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app import ambulance, beds
 from app.errors import ApiError
 from app.models import (
     AuditLog,
@@ -24,8 +25,17 @@ from app.models import (
     ReferralEvent,
     User,
 )
-from app.rules import SYSTEM, Status, TransitionError, check_transition, is_open
-from app.schemas import EventOut, FacilityBrief, FollowUpOut, PatientOut, ReferralOut, Vitals
+from app.rules import SYSTEM, Role, Status, TransitionError, check_transition, is_open
+from app.schemas import (
+    AmbulanceOut,
+    BedHoldOut,
+    EventOut,
+    FacilityBrief,
+    FollowUpOut,
+    PatientOut,
+    ReferralOut,
+    Vitals,
+)
 from app.timeutil import as_utc, utcnow
 
 STATUS_MESSAGES = {
@@ -38,6 +48,12 @@ STATUS_MESSAGES = {
     Status.OVERDUE: "{code}: the follow-up for {patient} is overdue.",
     Status.ESCALATED: "{code}: the overdue follow-up for {patient} was escalated by the coordinator.",
     Status.CLOSED: "{code}: the referral for {patient} is closed.",
+}
+
+# What happens to the held bed and any ambulance when a referral reaches a status.
+RELEASE_REASONS = {
+    Status.REJECTED: "Referral rejected",
+    Status.REROUTED: "Patient sent to another hospital",
 }
 
 
@@ -92,7 +108,29 @@ def move(
             target_id=referral.id,
         )
     )
+    _beds_and_ambulance(db, referral, target)
     _notify_creator(db, referral, target, actor)
+
+
+def _beds_and_ambulance(db: Session, referral: Referral, target: Status) -> None:
+    """Keep bed holds and ambulance trips in step with the referral, whichever endpoint moved it."""
+    if target == Status.ACCEPTED:
+        beds.extend_on_accept(db, referral)
+    elif target == Status.ARRIVAL_RECORDED:
+        beds.occupy(db, referral)
+        ambulance.complete_on_arrival(db, referral)
+    elif target in RELEASE_REASONS:
+        beds.release(db, referral, RELEASE_REASONS[target])
+        ambulance.cancel_open(db, referral, RELEASE_REASONS[target])
+
+
+def notify_facility_staff(db: Session, facility_id: str, referral: Referral, kind: str, message: str) -> None:
+    """Alert every active staff member of a hospital (the desk that acts on referrals)."""
+    staff = db.scalars(select(User.id).where(
+        User.facility_id == facility_id, User.role == Role.FACILITY_STAFF, User.is_active.is_(True)
+    ))
+    for uid in staff:
+        notify(db, uid, referral, kind, message)
 
 
 def _notify_creator(db: Session, referral: Referral, target: Status, actor: User | None) -> None:
@@ -146,6 +184,7 @@ def referral_out(db: Session, referral: Referral) -> ReferralOut:
     follow_up = db.scalar(
         select(FollowUp).where(FollowUp.referral_id == referral.id).order_by(FollowUp.created_at.desc()).limit(1)
     )
+    next_ref = rerouted_to(db, referral)
     return ReferralOut(
         id=referral.id,
         code=referral.code,
@@ -172,4 +211,34 @@ def referral_out(db: Session, referral: Referral) -> ReferralOut:
             for e in referral.events
         ],
         follow_up=FollowUpOut(due_at=as_utc(follow_up.due_at), status=follow_up.status) if follow_up else None,
+        bed=_bed_out(db, referral),
+        ambulance=_ambulance_out(db, referral),
+        rerouted_from_code=db.scalar(select(Referral.code).where(Referral.id == referral.rerouted_from_id))
+        if referral.rerouted_from_id else None,
+        rerouted_to_id=next_ref.id if next_ref else None,
+        rerouted_to_code=next_ref.code if next_ref else None,
+    )
+
+
+def rerouted_to(db: Session, referral: Referral) -> Referral | None:
+    return db.scalar(select(Referral).where(Referral.rerouted_from_id == referral.id))
+
+
+def _bed_out(db: Session, referral: Referral) -> BedHoldOut | None:
+    hold = beds.hold_for(db, referral)
+    if hold is None:
+        return None
+    return BedHoldOut(ward=hold.ward, status=hold.status, held_until=as_utc(hold.held_until),
+                      release_reason=hold.release_reason)
+
+
+def _ambulance_out(db: Session, referral: Referral) -> AmbulanceOut | None:
+    trip = ambulance.latest_trip(db, referral)
+    if trip is None:
+        return None
+    return AmbulanceOut(
+        status=trip.status, pickup_note=trip.pickup_note, requested_at=as_utc(trip.requested_at),
+        dispatched_at=as_utc(trip.dispatched_at), eta_minutes=trip.eta_minutes,
+        expected_at=ambulance.expected_at(trip), vehicle_number=trip.vehicle_number,
+        driver_phone=trip.driver_phone, picked_up_at=as_utc(trip.picked_up_at), cancel_reason=trip.cancel_reason,
     )

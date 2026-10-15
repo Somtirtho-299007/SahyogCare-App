@@ -47,7 +47,7 @@ class UserListOut(UserOut):
 def _check_facility(db: Session, coordinator: User, role: str, facility_id: str | None) -> None:
     if role in HOSPITAL_ROLES:
         facility = db.get(Facility, facility_id) if facility_id else None
-        if facility is None or facility.district.lower() != coordinator.district.lower():
+        if facility is None or not facility.active or facility.district.lower() != coordinator.district.lower():
             raise ApiError(422, "VALIDATION_ERROR", "Choose a hospital in your district for this person.",
                            {"fields": {"facility_id": "Required"}})
     elif facility_id is not None:

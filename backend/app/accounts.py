@@ -15,12 +15,14 @@ log = logging.getLogger("sahyogcare.accounts")
 def ensure_coordinators(db: Session) -> int:
     """Add a coordinator account for each configured email that has none. Safe to run every start."""
     added = 0
-    for email in settings.coordinator_email_list:
+    for email, district in settings.coordinator_entries:
         user = db.scalar(select(User).where(User.email == email))
         if user is None:
-            db.add(User(email=email, name=email.split("@")[0], role=Role.COORDINATOR,
-                        district=settings.coordinator_district))
+            db.add(User(email=email, name=email.split("@")[0], role=Role.COORDINATOR, district=district))
             added += 1
+        elif user.role == Role.COORDINATOR and user.is_active and user.district != district:
+            # Moving a configured coordinator to another area is done by changing the setting.
+            user.district = district
         elif not user.is_active:
             log.warning("Configured coordinator %s is switched off; leaving it off.", email)
     db.commit()

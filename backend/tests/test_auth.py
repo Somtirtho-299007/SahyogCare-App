@@ -53,12 +53,15 @@ def test_code_works_only_once(client):
     assert verify(client, code).json()["error"]["code"] == "OTP_INVALID"
 
 
-def test_unknown_email_gets_the_same_answer_and_no_code(client, db):
+def test_new_email_gets_a_code_and_a_pending_account(client, db):
     r = request_code(client, "stranger@example.com")
-    assert r.status_code == 202
-    assert r.json()["message"] == request_code(client, "asha@sahyogcare.test").json()["message"]
-    assert r.json()["dev_code"] is None
-    assert db.scalar(select(OtpCode).where(OtpCode.email == "stranger@example.com")) is None
+    assert r.status_code == 202 and r.json()["dev_code"]
+    body = verify(client, r.json()["dev_code"], "stranger@example.com").json()
+    assert body["user"]["approved"] is False
+    h = {"Authorization": f"Bearer {body['access_token']}"}
+    assert client.get(f"{API}/me", headers=h).json()["email"] == "stranger@example.com"
+    # Waiting for approval: no records yet.
+    assert client.get(f"{API}/referrals", headers=h).json()["error"]["code"] == "ACCOUNT_PENDING"
 
 
 def test_inactive_user_cannot_get_a_code(client, db):

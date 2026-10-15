@@ -19,7 +19,7 @@ from sqlalchemy import true
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
-from app.rules import Role, Status, Triage, Ward
+from app.rules import AmbulanceStatus, HoldStatus, Role, Status, Triage, Ward
 
 
 def new_id() -> str:
@@ -52,6 +52,12 @@ class Facility(Base):
     latitude: Mapped[float | None] = mapped_column(Float)
     longitude: Mapped[float | None] = mapped_column(Float)
     has_ambulance: Mapped[bool] = mapped_column(Boolean, default=False)
+    address: Mapped[str | None] = mapped_column(String(300))
+    pincode: Mapped[str | None] = mapped_column(String(6))
+    # Where the details came from, e.g. "nadia.gov.in — Hospitals list (accessed Oct 2026)".
+    source: Mapped[str | None] = mapped_column(String(200))
+    # Hidden hospitals (e.g. demo data in production) are not offered for referrals.
+    active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=true())
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     services: Mapped[list["FacilityService"]] = relationship(
@@ -185,6 +191,8 @@ class Referral(Base):
     status: Mapped[str] = mapped_column(String(20), default=Status.CREATED, index=True)
     rejection_reason: Mapped[str | None] = mapped_column(String(40))
     follow_up_days: Mapped[int | None] = mapped_column(Integer)
+    # Set when this referral continues an earlier one that was sent on from another hospital.
+    rerouted_from_id: Mapped[str | None] = mapped_column(ForeignKey("referrals.id"), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
@@ -261,7 +269,10 @@ class AuditLog(Base):
 
 
 class BedWard(Base):
-    """Bed counts for one ward of one hospital, kept up to date by its staff (or the coordinator)."""
+    """Bed counts for one ward of one hospital, kept up to date by its staff (or the coordinator).
+
+    Free beds = total - occupied - beds held for incoming referrals.
+    """
 
     __tablename__ = "bed_wards"
     __table_args__ = (
@@ -301,3 +312,61 @@ class AccessRequest(Base):
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     decision_note: Mapped[str | None] = mapped_column(String(300))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class InviteCode(Base):
+    """A secret joining code made by the coordinator. Whoever logs in with their own
+    email and enters it gets that role (and hospital) straight away, without waiting."""
+
+    __tablename__ = "invite_codes"
+    __table_args__ = (_enum_check("role", list(Role)),)
+
+    id: Mapped[str] = mapped_column(ID, primary_key=True, default=new_id)
+    code: Mapped[str] = mapped_column(String(24), unique=True, index=True)
+    role: Mapped[str] = mapped_column(String(20))
+    district: Mapped[str] = mapped_column(String(80), index=True)
+    facility_id: Mapped[str | None] = mapped_column(ForeignKey("facilities.id"))
+    label: Mapped[str | None] = mapped_column(String(120))  # e.g. "Chakdaha block ASHAs, Oct training"
+    max_uses: Mapped[int | None] = mapped_column(Integer)  # None = no limit
+    uses: Mapped[int] = mapped_column(Integer, default=0)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_by_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+class BedHold(Base):
+    """A bed reserved for one referral, from creation until arrival (or release)."""
+
+    __tablename__ = "bed_holds"
+    __table_args__ = (_enum_check("status", list(HoldStatus)), _enum_check("ward", list(Ward)))
+
+    id: Mapped[str] = mapped_column(ID, primary_key=True, default=new_id)
+    referral_id: Mapped[str] = mapped_column(ForeignKey("referrals.id"), unique=True)
+    facility_id: Mapped[str] = mapped_column(ForeignKey("facilities.id"), index=True)
+    ward: Mapped[str] = mapped_column(String(20))
+    status: Mapped[str] = mapped_column(String(20), default=HoldStatus.HELD, index=True)
+    held_until: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    release_reason: Mapped[str | None] = mapped_column(String(120))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class AmbulanceTrip(Base):
+    """The receiving hospital's ambulance fetching a referred patient."""
+
+    __tablename__ = "ambulance_trips"
+    __table_args__ = (_enum_check("status", list(AmbulanceStatus)),)
+
+    id: Mapped[str] = mapped_column(ID, primary_key=True, default=new_id)
+    referral_id: Mapped[str] = mapped_column(ForeignKey("referrals.id"), index=True)
+    facility_id: Mapped[str] = mapped_column(ForeignKey("facilities.id"), index=True)
+    status: Mapped[str] = mapped_column(String(20), default=AmbulanceStatus.REQUESTED, index=True)
+    pickup_note: Mapped[str] = mapped_column(String(300))  # village, landmark, how to find the house
+    requested_by_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
+    requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    dispatched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    eta_minutes: Mapped[int | None] = mapped_column(Integer)
+    vehicle_number: Mapped[str | None] = mapped_column(String(20))
+    driver_phone: Mapped[str | None] = mapped_column(String(10))
+    picked_up_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    cancel_reason: Mapped[str | None] = mapped_column(String(200))

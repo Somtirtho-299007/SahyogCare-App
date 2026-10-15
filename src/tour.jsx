@@ -56,6 +56,12 @@ export const TOURS = {
     { target: "consult", title: "Talk to a doctor", body: "Start an eSanjeevani teleconsultation from here." },
     { target: "help", title: "Replay anytime", body: "Tap ? to see this tour again." },
   ],
+  coordinator: [
+    { target: "requests", title: "Who wants to join", body: "People who signed up with their email ask for a role here. Approve or reject in one tap." },
+    { target: "invites", title: "Invite codes", body: "Make a secret code for ASHAs, a hospital's staff or doctors. People who enter it join at once." },
+    { target: "beds", title: "Beds in the district", body: "Free beds in every ward of every hospital, as their staff last reported." },
+    { target: "help", title: "Replay anytime", body: "Tap ? to see this tour again." },
+  ],
   medical: [
     {
       target: "stats",

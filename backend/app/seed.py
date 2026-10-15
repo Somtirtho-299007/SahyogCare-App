@@ -1,23 +1,56 @@
-"""Load starting data: facilities and test users. Safe to run more than once.
+"""Load starting data. Safe to run more than once; never overwrites what users changed.
 
 Run:  python -m app.seed
 
-All people here are fake test accounts on the reserved .test domain.
-Facility phone numbers are left empty on purpose: add real desk numbers
-from the district health office rather than invented ones.
+1. Real government hospitals of Nadia district, copied from the district's
+   official website. Only what the source says is filled in (name, type, address,
+   PIN code, phone). Bed counts, location and ambulance are left empty: hospital
+   staff or the coordinator enter them in the app.
+2. Demo data (only when SAHYOG_DEMO_DATA is true, the default for development and
+   tests): four test hospitals with made-up beds, and fake @sahyogcare.test accounts.
+   With SAHYOG_DEMO_DATA=false (the live server), the demo hospitals are hidden and
+   the demo accounts switched off.
 """
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import models  # noqa: F401
+from app.config import settings
 from app.db import SessionLocal
 from app.models import BedWard, Facility, FacilityService, User
 from app.rules import Role, Ward
 
 DISTRICT = "Nadia"
 
-# Same four facilities as the frontend's public/data/facilities.json.
+NADIA_SOURCE = "nadia.gov.in, Public Utilities: Hospitals (accessed Oct 2026)"
+
+# Real hospitals: (name, type, address, PIN code, phone), exactly as listed by the
+# district. Each starts with General Medicine; the coordinator adds the other
+# services each hospital really offers. Add the rest of the district's list in the
+# app (Coordinator > Hospitals > Add hospital) or here.
+REAL_FACILITIES = [
+    ("Chakdaha State General Hospital", "State General Hospital",
+     "Chakdaha Sukhsagar Road, Near Sampriti Mancha, Chakdaha, Nadia", "741222", "7548975218"),
+    ("Aranghata Rural Hospital", "Rural Hospital (BPHC)", "Aranghata, Sabdalpur, Nadia", "741501", "9153217447"),
+    ("Bagula Rural Hospital", "Rural Hospital", "Bagula, Nadia", "741502", "7548975230"),
+    ("Bethuadahari Rural Hospital", "Rural Hospital", "Bethuadahari, Nadia", "741126", "7548975225"),
+    ("Bishnupur Rural Hospital", "Rural Hospital", "Bishnupur, P.O. Nadia Bishnupur, Nadia", "741103", "03472-229224"),
+    ("Fulia Block Primary Health Centre", "Block Primary Health Centre", "Fulia, Nadia", "741402", "9333414373"),
+    ("Chapra Rural Hospital", "Rural Hospital", "Bangaljhi, Chapra, Nadia", "741123", "7548975223"),
+]
+
+# Naihati (North 24 Parganas). Only what could be confirmed from public sources is
+# filled in; the Naihati coordinator adds phone numbers and the other hospitals in the app.
+NAIHATI = "Naihati"
+NAIHATI_SOURCE = "Government hospital (DNB-accredited); contact details to be added by the Naihati coordinator"
+NAIHATI_FACILITIES = [
+    ("Naihati State General Hospital", "State General Hospital", "Naihati, North 24 Parganas", None, None),
+]
+REAL_DEFAULT_SERVICES = ["General Medicine"]
+
+# ---------- Demo data (made up; never shown on the live server) ----------
+
 FACILITIES = [
     ("Kalyani District Hospital", "District Hospital", 14, ["General Medicine", "Emergency", "Diagnostics"]),
     ("Ranaghat Community Health Centre", "CHC", 8, ["General Medicine", "Maternity"]),
@@ -63,10 +96,28 @@ def seed(db: Session) -> dict[str, int]:
     added = {"facilities": 0, "users": 0, "wards": 0}
     by_name: dict[str, Facility] = {f.name: f for f in db.scalars(select(Facility))}
 
+    real = [(DISTRICT, NADIA_SOURCE, *row) for row in REAL_FACILITIES] + \
+           [(NAIHATI, NAIHATI_SOURCE, *row) for row in NAIHATI_FACILITIES]
+    for district, source, name, ftype, address, pincode, phone in real:
+        if name in by_name:
+            continue
+        f = Facility(name=name, type=ftype, district=district, address=address, pincode=pincode, phone=phone,
+                     source=source)
+        f.services = [FacilityService(service=s) for s in REAL_DEFAULT_SERVICES]
+        db.add(f)
+        by_name[name] = f
+        added["facilities"] += 1
+    db.flush()
+
+    if not settings.demo_data:
+        _hide_demo(db, by_name)
+        db.commit()
+        return added
+
     for name, ftype, beds, services in FACILITIES:
         if name in by_name:
             continue
-        f = Facility(name=name, type=ftype, district=DISTRICT, beds=beds)
+        f = Facility(name=name, type=ftype, district=DISTRICT, beds=beds, source="Demo data (made up)")
         f.services = [FacilityService(service=s) for s in services]
         db.add(f)
         by_name[name] = f
@@ -106,6 +157,16 @@ def seed(db: Session) -> dict[str, int]:
 
     db.commit()
     return added
+
+
+def _hide_demo(db: Session, by_name: dict[str, Facility]) -> None:
+    for name, *_ in FACILITIES:
+        if name in by_name:
+            by_name[name].active = False
+    for email, *_ in USERS:
+        user = db.scalar(select(User).where(User.email == email))
+        if user is not None:
+            user.is_active = False
 
 
 if __name__ == "__main__":

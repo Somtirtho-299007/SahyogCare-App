@@ -1,4 +1,4 @@
-"""Hospitals: search, live bed counts, and hospital management.
+"""Hospitals: search, live bed counts, recommendations, and hospital management.
 
 Any logged-in user may search hospitals and see bed counts. Hospital staff keep
 their own hospital's bed counts up to date. The coordinator (acting for the
@@ -12,14 +12,17 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app import beds
+from app.config import settings
 from app.db import get_db
 from app.errors import ApiError
 from app.models import AuditLog, BedWard, Facility, FacilityService, User
+from app.recommend import recommend
 from app.rules import AVAILABILITY_STALE_AFTER, Role
 from app.schemas import (
     FacilityIn,
     FacilityOut,
     FacilityUpdateIn,
+    RecommendationOut,
     ServiceOut,
     Ward,
     WardIn,
@@ -46,13 +49,14 @@ def _facility_out(db: Session, f: Facility, now: datetime) -> FacilityOut:
             )
         )
     wards = [
-        WardOut(ward=st.ward.ward, total=st.ward.total, occupied=st.ward.occupied, free=st.free,
+        WardOut(ward=st.ward.ward, total=st.ward.total, occupied=st.ward.occupied, held=st.held, free=st.free,
                 updated_at=as_utc(st.ward.updated_at), stale=st.stale(now))
         for st in beds.states_for(db, f.id)
     ]
     return FacilityOut(
         id=f.id, name=f.name, type=f.type, district=f.district, phone=f.phone, beds=f.beds,
         latitude=f.latitude, longitude=f.longitude, has_ambulance=f.has_ambulance,
+        address=f.address, pincode=f.pincode, source=f.source,
         services=services, wards=wards,
     )
 
@@ -69,12 +73,16 @@ def _rank(f: FacilityOut, service: str | None) -> int:
 def search_facilities(
     q: str | None = Query(None, max_length=80, description="Matches name, type or service"),
     service: str | None = Query(None, max_length=80, description="Only facilities listing this service"),
-    district: str | None = Query(None, max_length=80),
+    district: str | None = Query(None, max_length=80, description="Only for people still signing up"),
     # Hospital names are not private; people waiting for approval need them to pick their hospital.
-    _: User = Depends(current_user_any),
+    user: User = Depends(current_user_any),
     db: Session = Depends(get_db),
 ) -> list[FacilityOut]:
-    stmt = select(Facility).options(selectinload(Facility.services)).order_by(Facility.name)
+    # Everyone works inside one area. Only someone still signing up may look at another
+    # served area, to pick the hospital they work at there.
+    district = (settings.canonical_district(district) or user.district) if not user.approved else user.district
+    stmt = (select(Facility).options(selectinload(Facility.services))
+            .where(Facility.active.is_(True)).order_by(Facility.name))
     if district:
         stmt = stmt.where(Facility.district.ilike(district))
     if service:
@@ -93,9 +101,25 @@ def search_facilities(
     return sorted(results, key=lambda f: _rank(f, service))
 
 
+@router.get("/recommend", response_model=list[RecommendationOut])
+def recommend_facilities(
+    service: str = Query(min_length=1, max_length=80),
+    latitude: float | None = Query(None, ge=-90, le=90, description="Where the patient is, if known"),
+    longitude: float | None = Query(None, ge=-180, le=180),
+    limit: int = Query(10, ge=1, le=50),
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+) -> list[RecommendationOut]:
+    """Hospitals offering this service in the user's district, best first, each with its reasons."""
+    return recommend(db, service, district=user.district, latitude=latitude, longitude=longitude, limit=limit)
+
+
 @router.get("/{facility_id}", response_model=FacilityOut)
-def get_facility(facility_id: str, _: User = Depends(current_user), db: Session = Depends(get_db)) -> FacilityOut:
-    return _facility_out(db, _get(db, facility_id), utcnow())
+def get_facility(facility_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)) -> FacilityOut:
+    f = _get(db, facility_id)
+    if f.district.lower() != user.district.lower():
+        raise ApiError(404, "NOT_FOUND", "Facility not found.")  # other areas are invisible
+    return _facility_out(db, f, utcnow())
 
 
 def _get(db: Session, facility_id: str) -> Facility:
@@ -118,6 +142,10 @@ def _set_ward(db: Session, f: Facility, ward: str, counts: WardIn, user: User) -
     if counts.occupied > counts.total:
         raise ApiError(422, "VALIDATION_ERROR", "Occupied beds cannot be more than total beds.",
                        {"fields": {"occupied": "More than total"}})
+    held = beds.held_count(db, f.id, ward)
+    if counts.occupied + held > counts.total:
+        raise ApiError(422, "BEDS_HELD", f"{held} bed(s) are held for patients on their way; "
+                       "total must leave room for them.", {"held": held})
     row = db.scalar(select(BedWard).where(BedWard.facility_id == f.id, BedWard.ward == ward))
     if row is None:
         row = BedWard(facility_id=f.id, ward=ward)
@@ -149,7 +177,8 @@ def create_facility(body: FacilityIn, user: User = Depends(require_roles(Role.CO
         raise ApiError(409, "DUPLICATE_FACILITY", "A hospital with this name already exists in your district.",
                        {"facility_id": exists_already})
     f = Facility(name=body.name.strip(), type=body.type.strip(), district=user.district, phone=body.phone,
-                 latitude=body.latitude, longitude=body.longitude, has_ambulance=body.has_ambulance, hfr_id=body.hfr_id)
+                 latitude=body.latitude, longitude=body.longitude, has_ambulance=body.has_ambulance, hfr_id=body.hfr_id,
+                 address=body.address, pincode=body.pincode, source=body.source)
     names = {s.strip().lower(): s.strip() for s in body.services}
     f.services = [FacilityService(service=s) for s in names.values()]
     db.add(f)
@@ -166,7 +195,7 @@ def update_facility(facility_id: str, body: FacilityUpdateIn, user: User = Depen
                     db: Session = Depends(get_db)) -> FacilityOut:
     f = _get(db, facility_id)
     _check_can_manage(user, f)
-    for field in ("phone", "latitude", "longitude", "has_ambulance"):
+    for field in ("phone", "latitude", "longitude", "has_ambulance", "address", "pincode", "source"):
         value = getattr(body, field)
         if value is not None:
             setattr(f, field, value)

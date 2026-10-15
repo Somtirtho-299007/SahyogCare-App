@@ -20,6 +20,7 @@ class WardOut(BaseModel):
     ward: str  # GENERAL | EMERGENCY | MATERNITY | PAEDIATRIC | ICU
     total: int
     occupied: int
+    held: int  # reserved for referred patients on their way
     free: int
     updated_at: datetime
     stale: bool  # True when the counts have not been confirmed recently
@@ -35,6 +36,9 @@ class FacilityOut(BaseModel):
     latitude: float | None = None
     longitude: float | None = None
     has_ambulance: bool = False
+    address: str | None = None
+    pincode: str | None = None
+    source: str | None = None
     services: list[ServiceOut]
     wards: list[WardOut] = Field(default_factory=list)
 
@@ -61,6 +65,9 @@ class FacilityIn(BaseModel):
     longitude: float | None = Field(None, ge=-180, le=180)
     has_ambulance: bool = False
     hfr_id: str | None = Field(None, max_length=40)
+    address: str | None = Field(None, max_length=300)
+    pincode: str | None = Field(None, pattern=r"^\d{6}$")
+    source: str | None = Field(None, max_length=200)
     services: list[Annotated[str, Field(min_length=1, max_length=80)]] = Field(min_length=1, max_length=40)
     wards: list[WardCountsIn] = Field(default_factory=list, max_length=10)
 
@@ -70,7 +77,30 @@ class FacilityUpdateIn(BaseModel):
     latitude: float | None = Field(None, ge=-90, le=90)
     longitude: float | None = Field(None, ge=-180, le=180)
     has_ambulance: bool | None = None
+    address: str | None = Field(None, max_length=300)
+    pincode: str | None = Field(None, pattern=r"^\d{6}$")
+    source: str | None = Field(None, max_length=200)
     add_services: list[Annotated[str, Field(min_length=1, max_length=80)]] = Field(default_factory=list, max_length=40)
+
+
+class RecommendationOut(BaseModel):
+    facility_id: str
+    facility_name: str
+    facility_type: str
+    phone: str | None
+    service: str
+    service_availability: str  # AVAILABLE | UNAVAILABLE | UNKNOWN
+    ward: str | None  # None when the service needs no bed
+    beds_free: int | None  # None when the hospital has not reported that ward
+    beds_total: int | None
+    beds_updated_at: datetime | None
+    beds_stale: bool
+    distance_km: float | None
+    rejection_rate: float | None
+    average_hours_to_accept: float | None
+    has_ambulance: bool
+    score: float
+    reasons: list[str]  # plain-language explanation of the ranking
 
 
 class HealthOut(BaseModel):
@@ -213,6 +243,30 @@ class ReferralIn(BaseModel):
     encounter_id: str
     destination_facility_id: str
     requested_service: str = Field(min_length=1, max_length=80)
+    # Send the referral even though the hospital reports no free bed (e.g. it is the only option).
+    allow_without_bed: bool = False
+
+
+class RerouteIn(BaseModel):
+    destination_facility_id: str
+    # Defaults to the service requested in the original referral.
+    requested_service: str | None = Field(None, min_length=1, max_length=80)
+    note: str | None = Field(None, max_length=300)
+    allow_without_bed: bool = False
+
+
+class AmbulanceRequestIn(BaseModel):
+    pickup_note: str = Field(min_length=3, max_length=300, description="Village, landmark, how to find the house")
+
+
+class AmbulanceDispatchIn(BaseModel):
+    eta_minutes: int = Field(ge=1, le=600)
+    vehicle_number: str | None = Field(None, max_length=20)
+    driver_phone: Phone | None = None
+
+
+class AmbulanceCancelIn(BaseModel):
+    reason: str = Field(min_length=3, max_length=200)
 
 
 class RejectIn(BaseModel):
@@ -252,6 +306,26 @@ class FacilityBrief(BaseModel):
     phone: str | None
 
 
+class BedHoldOut(BaseModel):
+    ward: str
+    status: str  # HELD | OCCUPIED | RELEASED | EXPIRED
+    held_until: datetime
+    release_reason: str | None
+
+
+class AmbulanceOut(BaseModel):
+    status: str  # REQUESTED | DISPATCHED | PICKED_UP | COMPLETED | CANCELLED
+    pickup_note: str
+    requested_at: datetime
+    dispatched_at: datetime | None
+    eta_minutes: int | None
+    expected_at: datetime | None
+    vehicle_number: str | None
+    driver_phone: str | None
+    picked_up_at: datetime | None
+    cancel_reason: str | None
+
+
 class ReferralOut(BaseModel):
     id: str
     code: str
@@ -268,6 +342,12 @@ class ReferralOut(BaseModel):
     vitals: Vitals
     events: list[EventOut]
     follow_up: FollowUpOut | None
+    bed: BedHoldOut | None = None  # None when no bed was held (service needs none, or no bed data)
+    ambulance: AmbulanceOut | None = None  # the latest ambulance trip, if any
+    # Re-routing: where this referral came from, and where it was sent on to.
+    rerouted_from_code: str | None = None
+    rerouted_to_id: str | None = None
+    rerouted_to_code: str | None = None
 
 
 class RejectionReasonOut(BaseModel):
@@ -309,12 +389,24 @@ class PublicStep(BaseModel):
     at: datetime
 
 
+class PublicAmbulance(BaseModel):
+    status: str
+    expected_at: datetime | None
+    vehicle_number: str | None
+    driver_phone: str | None
+
+
 class PublicLookupOut(BaseModel):
     code: str
     status: str
     facility_name: str
     timeline: list[PublicStep]
     checklist: list[str]
+    # When the patient was sent to another hospital: the new code to use from now on.
+    rerouted_to_code: str | None = None
+    rerouted_to_facility: str | None = None
+    ambulance: PublicAmbulance | None = None
+    emergency_number: str = "108"
 
 
 # ---------- Notifications ----------
@@ -389,3 +481,5 @@ class WatchdogRunOut(BaseModel):
     not_arrived: int
     follow_ups_overdue: int
     coordinator_alerts: int
+    bed_holds_expired: int = 0
+    ambulance_alerts: int = 0

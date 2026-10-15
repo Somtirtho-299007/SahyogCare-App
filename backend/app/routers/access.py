@@ -34,6 +34,8 @@ HOSPITAL_ROLES = {Role.FACILITY_STAFF, Role.DOCTOR}
 class AccessRequestIn(BaseModel):
     role: Literal["WORKER", "FACILITY_STAFF", "DOCTOR", "COORDINATOR"]
     name: str = Field(min_length=1, max_length=120)
+    # The area the person works in; that area's coordinator decides. Defaults to their current one.
+    district: str | None = Field(None, max_length=80)
     # Required for hospital staff and doctors.
     facility_id: str | None = None
     note: str | None = Field(None, max_length=300, description="Anything that helps the coordinator check who you are")
@@ -74,9 +76,16 @@ def _apply(user: User, r: AccessRequest) -> None:
 @router.post("", response_model=AccessRequestOut, status_code=201)
 def ask_for_role(body: AccessRequestIn, user: User = Depends(current_user_any),
                  db: Session = Depends(get_db)) -> AccessRequestOut:
+    if body.district is not None:
+        area = settings.canonical_district(body.district)
+        if area is None:
+            raise ApiError(422, "VALIDATION_ERROR", "SahyogCare does not serve this area yet.",
+                           {"fields": {"district": f"One of: {', '.join(settings.district_list)}"}})
+        if not user.approved:
+            user.district = area  # only while waiting; an approved person's area never changes here
     if body.role in HOSPITAL_ROLES:
         facility = db.get(Facility, body.facility_id) if body.facility_id else None
-        if facility is None or facility.district.lower() != user.district.lower():
+        if facility is None or not facility.active or facility.district.lower() != user.district.lower():
             raise ApiError(422, "VALIDATION_ERROR", "Choose the hospital you work at.",
                            {"fields": {"facility_id": "Required"}})
     elif body.facility_id is not None:
